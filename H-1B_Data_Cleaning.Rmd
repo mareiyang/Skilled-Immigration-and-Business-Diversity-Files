@@ -1,0 +1,392 @@
+---
+title: "ECON 4198W Data Cleaning Part 2"
+author: "Spencer Ma"
+date: "2025-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scientific=T, digits = 7)
+knitr::opts_chunk$set(warning = FALSE, results = 'hide', message = F)
+```
+
+# Data Cleaning H-1B Data
+
+## Uploading the Data
+
+```{r}
+library(data.table)
+library(readxl)
+
+# Define the file path
+file_path <- "C:/Users/maray/Documents/ECON 4198W/Datasets/H-1B Data/H-1B_Disclosure_Data_FY16.xlsx"
+
+# Read the sheet into a data.table
+H1B2016_Disclosure_Data <- as.data.table(read_excel(file_path, sheet = 1))
+```
+
+```{r}
+H1BFY2017_employer_data_hub <- as.data.table(read_excel("C:/Users/maray/Documents/ECON 4198W/Datasets/H-1B Data/H-1B Employer Data Hub (2017).xlsx", sheet = 1))
+```
+
+## Visualization of the 2016 H-1B Disclosure Data
+
+```{r}
+library(dplyr)
+library(lubridate)
+
+H1b2016Viz <- H1B2016_Disclosure_Data[CASE_SUBMITTED >= "2016-01-01" & CASE_SUBMITTED <= "2016-12-31"]
+
+# Create a 'week' column
+H1b2016Viz[, week := floor_date(CASE_SUBMITTED, unit = "week", week_start = 1)]
+
+# Count number of cases per week
+weekly_counts <- H1b2016Viz[, .N, by = week]
+
+# Convert week column to Date format
+weekly_counts[, week := as.Date(week)]
+
+# Remove December Entry
+weekly_counts <- weekly_counts %>% filter(week != "2015-12-28")
+
+# View data structure
+head(weekly_counts)
+```
+
+### Visualizing other years
+
+```
+file_path_2 <- "C:/Users/maray/Documents/ECON 4198W/Datasets/H-1B Data/H-1B_Disclosure_Data_FY2019.xlsx"
+
+H1B2012_Disclosure_Data <- as.data.table(read_excel(file_path_2, sheet = 1))
+```
+
+```
+H1b2012Viz <- H1B2012_Disclosure_Data[CASE_SUBMITTED >= "2019-01-01" & CASE_SUBMITTED <= "2019-12-31"]
+
+# Create a 'week' column
+H1b2012Viz[, week := floor_date(CASE_SUBMITTED, unit = "week", week_start = 1)]
+
+# Count number of cases per week
+weekly_counts_2012 <- H1b2012Viz[, .N, by = week]
+
+# Convert week column to Date format
+weekly_counts_2012[, week := as.Date(week)]
+
+# Remove December Entry
+weekly_counts_2012 <- weekly_counts_2012 %>% filter(week != "2014-12-29")
+
+# View data structure
+head(weekly_counts_2012)
+```
+
+```
+library(ggplot2)
+
+ggplot(weekly_counts_2012, aes(x = week, y = N)) +
+  geom_line(color = "purple", size = 1) +
+  geom_point(size = 1) +
+  labs(title = "Weekly H-1B Cases Submitted in 2019",
+       x = "Week",
+       y = "Number of Cases Submitted") +
+  scale_y_continuous(breaks = seq(0, 55000, by = 5000)) +
+  scale_x_date(date_labels = "%b %d", date_breaks = "1 month") +
+  theme_minimal(base_size = 16)
+
+ggsave("H-1B_graph_2019.png", width = 12, height = 8, dpi = 300, bg = "white")
+
+```
+
+# Cleaning the Disclosure Dataset
+
+```{r}
+Disclosure_data <- H1B2016_Disclosure_Data[VISA_CLASS == "H-1B"]
+
+Disclosure_data <- Disclosure_data[!(CASE_STATUS %in% c("WITHDRAWN", "CERTIFIED-WITHDRAWN", "DENIED"))]
+
+#Convert CASE_SUBMITTED to Date format
+Disclosure_data <- Disclosure_data[, CASE_SUBMITTED := as.Date(CASE_SUBMITTED)]
+
+Likely_lottery <- Disclosure_data[CASE_SUBMITTED >= as.Date("2016-03-01") & CASE_SUBMITTED < as.Date("2016-04-03")]
+```
+
+I removed cases with non H-1B visas such as the E-3 Australian, the Singapore H-1B1 and the Chile H-1B1. I also excluded cases where the LCA was withdrawn, certified, withdrawn, or denied because those cases never entered the H-1B lottery.
+
+As described in Mahajan et. al, LCA cases submitted from March to April are more likely to be lottery-bound. That is why I removed any LCAs not submitted between March 1st and April 5th, which was the time USCIS started accepting H-1B petitions.
+
+## Removing Cap-Exempt Employers from Both Datasets
+
+```{r}
+cap_exempt_keywords <- c("university", "univ", "college", "school", "research", "hospital", "medical center", "foundation", "institute", "government", "public health")
+
+#Removing employers with cap-exempt keywords in the employer name from the LCA Dataset
+Likely_lottery <- Likely_lottery[!grepl(paste(cap_exempt_keywords, collapse = "|"), tolower(EMPLOYER_NAME))]
+
+#Removing employers with cap-exempt keywords from the Employer Datahub Dataset
+Lottery_winners <- H1BFY2017_employer_data_hub[!grepl(paste(cap_exempt_keywords, collapse = "|"), tolower(`Employer (Petitioner) Name`))]
+```
+
+I removed keywords pertaining to cap-exempt employers, including universities, research institutions, and nonprofits.
+
+## Extra Cleaning
+
+```{r}
+library(tidyverse)
+library(janitor)
+
+# Convert column names to lowercase and clean up spaces
+Likely_lottery <- Likely_lottery %>%
+  clean_names()  # Converts column names to snake_case
+
+# Convert date columns to proper date format
+Likely_lottery <- Likely_lottery %>%
+  mutate(
+    case_submitted = ymd(case_submitted),
+    decision_date = ymd(decision_date),
+    employment_start_date = ymd(employment_start_date),
+    employment_end_date = ymd(employment_end_date)
+  )
+
+# Standardize employer names (lowercase, trim spaces)
+Likely_lottery <- Likely_lottery %>%
+  mutate(employer_name = tolower(trimws(employer_name)))
+
+# Extract employment year for merging
+Likely_lottery <- Likely_lottery %>%
+  mutate(employment_year = year(employment_start_date))
+
+```
+
+```{r}
+# Clean column names
+Lottery_winners <- Lottery_winners %>%
+  clean_names()
+
+# Ensure Fiscal Year is numeric
+Lottery_winners <- Lottery_winners %>%
+  mutate(fiscal_year = as.numeric(fiscal_year))
+
+# Standardize employer names (lowercase, trim spaces)
+Lottery_winners <- Lottery_winners %>%
+  mutate(employer_petitioner_name = tolower(trimws(employer_petitioner_name)))
+
+# Convert Petitioner Zip Code to string (avoid numeric formatting issues)
+Lottery_winners <- Lottery_winners %>%
+  mutate(petitioner_zip_code = as.character(as.integer(petitioner_zip_code)))
+
+# Drop rows where employer name is missing
+Lottery_winners <- Lottery_winners %>%
+  filter(!is.na(employer_petitioner_name))
+
+#write.csv(Likely_lottery, "likely_lottery.csv")
+#write.csv(Lottery_winners, "lottery_winners.csv")
+```
+
+# Aggregating by county
+
+```{r}
+library(tidycensus)
+library(tigris)
+
+zip_county <- read_excel("ZIP_COUNTY_122016.xlsx")
+
+# Ensure ZIP codes are character for merging
+zip_county$ZIP <- as.character(zip_county$ZIP)
+
+Lottery_winners$petitioner_zip_code <- as.character(Lottery_winners$petitioner_zip_code)
+
+# Merge lottery winners dataset with ZIP-to-County crosswalk
+uscis_with_county <- Lottery_winners %>%
+  left_join(zip_county, by = c("petitioner_zip_code" = "ZIP"))
+
+# Load Census FIPS-to-County mapping
+data(fips_codes)  # This dataset comes with tidycensus
+
+# Extract relevant columns (state, county, FIPS code)
+county_fips <- fips_codes %>%
+  select(state_code, county_code, county)
+
+# Ensure COUNTY column is character for merging
+uscis_with_county$COUNTY <- as.character(uscis_with_county$COUNTY)
+
+# Merge to get actual county names
+uscis_with_county <- uscis_with_county %>%
+  left_join(county_fips, by = c("COUNTY" = "county_code"))
+```
+
+## Handling unmatched ZIP codes
+
+```{r}
+unmatched_zips <- Lottery_winners %>%
+  anti_join(zip_county, by = c("petitioner_zip_code" = "ZIP"))
+
+# Count how many ZIPs are unmatched
+nrow(unmatched_zips)
+
+# View a sample of unmatched ZIP codes
+head(unmatched_zips$petitioner_zip_code)
+
+# Ensure ZIP codes are character type
+Lottery_winners$petitioner_zip_code <- as.character(Lottery_winners$petitioner_zip_code)
+zip_county$ZIP <- as.character(zip_county$ZIP)
+
+# Pad missing leading zeros (ensures all ZIPs are 5 digits)
+Lottery_winners$petitioner_zip_code <- str_pad(Lottery_winners$petitioner_zip_code, width = 5, pad = "0")
+zip_county$ZIP <- str_pad(zip_county$ZIP, width = 5, pad = "0")
+
+uscis_with_county <- Lottery_winners %>%
+  left_join(zip_county, by = c("petitioner_zip_code" = "ZIP"))
+
+uscis_with_county <- uscis_with_county %>%
+  filter(!industry_naics_code %in% c("611310", "622110", "541711", "541712", "921110"))
+
+```
+
+```{r}
+unmatched_final <- uscis_with_county %>%
+  filter(is.na(COUNTY))
+
+# View a sample of remaining unmatched ZIPs
+head(unmatched_final$petitioner_zip_code)
+
+unique(unmatched_final$petitioner_zip_code)
+
+#write.csv(uscis_with_county, "uscis_with_county.csv")
+```
+
+## Aggregating USCIS data by county
+
+```{r}
+# Keep only records with initial approvals and exclude continuing approvals
+uscis_filtered <- uscis_with_county %>%
+  filter(as.numeric(initial_approval) > 0)
+
+# Aggregate the dataset at the county level, summing only initial_approval
+county_aggregated <- uscis_filtered %>%
+  group_by(COUNTY) %>%
+  summarise(
+    initial_approval = sum(as.numeric(initial_approval), na.rm = TRUE),
+    RES_RATIO = mean(as.numeric(RES_RATIO), na.rm = TRUE),  # Taking mean since it's a ratio
+    BUS_RATIO = mean(as.numeric(BUS_RATIO), na.rm = TRUE),
+    OTH_RATIO = mean(as.numeric(OTH_RATIO), na.rm = TRUE),
+    TOT_RATIO = mean(as.numeric(TOT_RATIO), na.rm = TRUE)
+  )
+
+# View the first few rows of the aggregated dataset
+head(county_aggregated)
+
+sum(as.numeric(county_aggregated$initial_approval, na.rm = TRUE))
+```
+
+## Aggregating LCA data at the county level
+
+```{r}
+library(stringr)
+
+# Convert ZIP codes to character and pad leading zeros if necessary
+lca_data <- Likely_lottery %>%
+  mutate(employer_postal_code = str_pad(as.character(employer_postal_code), width = 5, pad = "0"))
+
+zip_county <- zip_county %>%
+  mutate(ZIP = str_pad(as.character(ZIP), width = 5, pad = "0"))
+
+# Merge LCA dataset with ZIP-to-County crosswalk
+lca_with_county <- lca_data %>%
+  left_join(zip_county, by = c("employer_postal_code" = "ZIP"))
+
+sum(is.na(lca_with_county$COUNTY))
+
+```
+
+### Debugging Fips Codes
+
+```{r}
+# Find ZIP codes that did not match
+unmatched_zips <- lca_data %>%
+  anti_join(zip_county, by = c("employer_postal_code" = "ZIP"))
+
+# Print unique unmatched ZIP codes
+#print(unique(unmatched_zips$worksite_postal_code))
+
+# Extract only the first 5 digits if ZIP codes have ZIP+4 formatting
+lca_data <- lca_data %>%
+  mutate(worksite_postal_code = str_sub(employer_postal_code, 1, 5))
+
+zip_county <- zip_county %>%
+  mutate(ZIP = str_sub(ZIP, 1, 5))
+
+lca_with_county <- lca_data %>%
+  left_join(zip_county, by = c("employer_postal_code" = "ZIP"))
+
+sum(is.na(lca_with_county$COUNTY))  # Check missing counties again
+
+```
+
+```{r}
+# Find unmatched ZIPs after merging
+unmatched_zips <- lca_data %>%
+  anti_join(zip_county, by = c("employer_postal_code" = "ZIP"))
+
+# Print unique unmatched ZIPs
+#print(unique(unmatched_zips$worksite_postal_code))
+
+# Remove non-numeric characters and trim spaces
+lca_data <- lca_data %>%
+  mutate(employer_postal_code = str_trim(employer_postal_code),  # Remove spaces
+         employer_postal_code = str_extract(employer_postal_code, "\\d+"),  # Keep only numbers
+         employer_postal_code = str_pad(employer_postal_code, width = 5, pad = "0"))  # Ensure 5 digits
+
+lca_with_county <- lca_data %>%
+  left_join(zip_county, by = c("employer_postal_code" = "ZIP"))
+
+sum(is.na(lca_with_county$COUNTY))  # Check missing counties again
+```
+
+### Labeling missing counties as unknown
+
+```{r}
+lca_with_county <- lca_with_county %>%
+  mutate(COUNTY = ifelse(is.na(COUNTY), "Unknown", COUNTY))
+
+table(is.na(lca_with_county$COUNTY))
+```
+
+### Aggregating LCA data
+
+```{r}
+# Aggregate by the number of workers in each county
+county_aggregated_lca <- lca_with_county %>%
+  filter(!is.na(COUNTY)) %>%  # Remove missing county entries
+  group_by(COUNTY) %>%  
+  summarise(total_workers = sum(total_workers, na.rm = TRUE), .groups = "drop")  # Sum total workers per county
+
+# View aggregated dataset
+head(county_aggregated_lca)
+
+#write.csv(county_aggregated, "USCIS_county_aggregated.csv")
+#write.csv(county_aggregated_lca, "LCA_county_aggregated.csv")
+```
+
+# Final Merge
+
+```{r}
+Lottery_Final <- county_aggregated |>
+  full_join(county_aggregated_lca, by = "COUNTY")
+
+Lottery_Final <- Lottery_Final |>
+  select(-RES_RATIO, -BUS_RATIO, -OTH_RATIO, -TOT_RATIO)
+
+head(Lottery_Final)
+
+Lottery_Final <- Lottery_Final |>
+  mutate(
+    initial_approval = as.integer(initial_approval),
+    num_petitions = as.integer(total_workers)
+  )
+
+Lottery_Final <- Lottery_Final |>
+  select(-total_workers)
+
+write.csv(Lottery_Final, "Lottery_Applications_vs_Approvals.csv", row.names = FALSE)
+```

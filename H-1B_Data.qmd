@@ -1,0 +1,602 @@
+---
+title: "ECON 4198W Merge and Analysis"
+format: html
+editor: visual
+---
+
+## Merging the two datasets
+
+```{r}
+library(data.table)
+
+CBP_data <- as.data.table(read.csv(("cbp_2012_2022.csv")))
+H1b_2016 <- as.data.table(read.csv("Lottery_Applications_vs_Approvals.csv"))
+```
+
+### Cleaning
+
+```{r}
+H1b_2016 <- H1b_2016[H1b_2016$num_petitions != 0]
+
+library(dplyr)
+
+H1b_2016 <- H1b_2016 |>
+  mutate(win_rate = initial_approval / num_petitions)
+```
+
+### Merge
+
+```{r}
+ProsemData_Raw <- CBP_data |>
+  mutate(COUNTY = substr(GEO_ID, 10, 14)) |>
+  left_join(H1b_2016, by = "COUNTY") |>
+  mutate(h1b_activity = ifelse(is.na(win_rate), 0, 1))
+
+ProsemData_Raw <- ProsemData_Raw[ProsemData_Raw$num_petitions >= 20]
+
+ProsemData_Raw <- ProsemData_Raw |>
+  distinct()
+```
+
+## Fixing Duplicates in County Business Patterns
+
+```{r}
+check_panel <- function(df, unit = "GEO_ID", time = "YEAR", sector = "NAICS") {
+  library(dplyr)
+  dupes <- df %>%
+    group_by(across(all_of(c(unit, time, sector)))) %>%
+    filter(n() > 1)
+  
+  if (nrow(dupes) == 0) {
+    message("✅ Data is uniquely identified by unit, time, and sector.")
+  } else {
+    message("❌ Found duplicate rows:")
+    print(dupes)
+  }
+}
+
+duplicates <-check_panel(ProsemData_Raw)
+```
+
+```{r}
+ProsemData <- ProsemData_Raw |>
+  group_by(GEO_ID, YEAR, NAICS) |>
+  summarise(
+    across(c(NAME, ESTAB, COUNTY, initial_approval, num_petitions, win_rate, h1b_activity), first),  # keep first occurrence
+    ESTAB = sum(ESTAB, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+check_panel(ProsemData)
+
+#write_dta("ProsemData.dta", data = ProsemData)
+```
+
+```{r}
+ProsemData <- ProsemData |>
+  mutate(Post = ifelse(YEAR >= 2017, 1, 0))
+```
+
+Merge and remove counties with number of petitions less than 20 to reduce noise in the data.
+
+## Creating Diversity Measures
+
+```{r}
+library(tidyr)
+
+calculate_indices <- function(ProsemData){
+  total <- sum(ProsemData$ESTAB)
+  p_i <- ProsemData$ESTAB / total
+  
+  # Shannon Index: -sum(p_i * ln(p_i))
+  shannon <- -sum(p_i * log(p_i))
+  
+  # Herfindahl-Hirschman Index: sum(p_i^2)
+  hhi <- sum(p_i^2)*10000
+  
+  return(data.frame(shannon_index = shannon, hhi = hhi, ESTAB = total))
+}
+
+H1bdf <- ProsemData |>
+  group_by(COUNTY, NAME, YEAR, win_rate) |>
+  group_modify(~ calculate_indices(.x)) |>
+  ungroup()
+```
+
+## Last Minute Data Cleaning + Adding State Column
+
+```{r}
+H1bdf <- H1bdf |>
+  mutate(win_rate = ifelse(win_rate > 1, 1, win_rate))
+
+# Create a lookup table for state FIPS codes and abbreviations
+state_fips_lookup <- data.frame(
+  state_fips = sprintf("%02d", c(1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 44, 45, 46, 47, 48, 49, 50, 51, 53, 54, 55, 56)),
+  state_abbr = c("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY")
+)
+
+# Extract the state FIPS code from the county FIPS code and join with the lookup table
+H1bdf <- H1bdf %>%
+  mutate(state_fips = substr(COUNTY, 1, 2)) %>%
+  left_join(state_fips_lookup, by = "state_fips") %>%
+  rename(STATE = state_abbr) %>%
+  select(-state_fips)
+
+library(haven)
+write_dta("H1bdf.dta", data = H1bdf)
+
+```
+
+## Descriptive Statistics
+
+```{r}
+summary(H1bdf[c("shannon_index", "hhi", "win_rate")])
+
+H1bdf |> 
+  group_by(YEAR) |>
+  summarise(
+    mean_shannon = mean(shannon_index, na.rm=TRUE),
+    sd_shannon = sd(shannon_index),
+    mean_hhi = mean(hhi, na.rm = TRUE),
+    mean_win_rate = mean(win_rate, na.rm = TRUE)
+  )
+```
+
+```{r}
+diversityrank <- H1bdf |>
+  filter(YEAR == 2022) |>
+  mutate(HHI_rank = min_rank(hhi))  # negative sign reverses rank
+
+sd(diversityrank$hhi, na.rm = TRUE)
+sd(diversityrank$hhi, na.rm = TRUE)/4
+```
+
+### Visualizations
+
+```{r}
+library(ggplot2)
+
+ggplot(H1bdf, aes(x = shannon_index)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Shannon Diversity Index", x = "Shannon Index", y = "Frequency")
+
+ggplot(H1bdf, aes(x = hhi)) +
+  geom_histogram(bins = 30, fill = "salmon", color = "black") +
+  labs(title = "Distribution of HHI", x = "HHI", y = "Count")
+
+ggplot(H1bdf, aes(x = win_rate)) +
+  geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
+  labs(title = "Distribution of H-1B Visa Win Rate", x = "Win Rate", y = "Count")
+
+```
+
+Here are the distributions for the diversity measures. Clustering for Shannon is very high and while most HHIs are clustering around the same, there are some large outliers. This may require applying a natural log on the diversity measures.
+
+## Regressions
+
+```{r}
+H1bdf <- H1bdf |>
+  mutate(
+    log_shannon = log(shannon_index),
+    log_hhi = log(hhi),
+    log_estab = log(ESTAB)
+  )
+
+summary(H1bdf[c("win_rate", "log_shannon", "log_hhi")])
+```
+
+Before doing anything, I'm gonna log my diversity measures because the interpretation makes less sense if I don't.
+
+### New Visualizations
+
+```{r}
+ggplot(H1bdf, aes(x = log_shannon)) +
+  geom_histogram(bins = 30, fill = "blue", color = "black") +
+  labs(title = "Distribution of log(Shannon Index)")
+
+ggplot(H1bdf, aes(x = log_hhi)) +
+  geom_histogram(bins = 30, fill = "red", color = "black") +
+  labs(title = "Distribution of log(HHI)")
+```
+
+### Preliminary Regressions
+
+```{r}
+library(lmtest)
+library(sandwich)
+
+reg_hhi <- lm(log_hhi ~ win_rate, data = H1bdf)
+reg_shannon <- lm(log_shannon ~ win_rate, data = H1bdf)
+
+summary(reg_hhi)
+summary(reg_shannon)
+
+coeftest(reg_hhi, vcov = vcovHC(reg_hhi, type = "HC1"))
+coeftest(reg_shannon, vcov = vcovHC(reg_shannon, type = "HC1"))
+```
+
+Regressions show high P values but low $R^2$, meaning there is likely a lot of omitted variable bias. Next is to control for county and year fixed effects.
+
+```{r}
+library(fixest)
+
+reg_hhifixed <- feols(log_hhi ~ win_rate | YEAR, data = H1bdf, cluster = ~COUNTY)
+
+lm_hhifixed <- lm(log_hhi ~ win_rate + factor(COUNTY) + factor(YEAR), data = H1bdf)
+
+reg_shannonfixed <- feols(log_shannon ~ win_rate | + YEAR, data = H1bdf, cluster = ~COUNTY)
+
+lm_shannonfixed <- lm(log_shannon ~ win_rate + factor(COUNTY) + factor(YEAR), data = H1bdf)
+
+summary(reg_hhifixed)
+summary(reg_shannonfixed)
+
+#summary(lm_hhifixed)
+#summary(lm_shannonfixed)
+
+#coeftest(reg_hhifixed, vcov = vcovHC(reg_hhifixed, type = "HC1"))
+#coeftest(reg_shannonfixed, vcov = vcovHC(reg_shannonfixed, type = "HC1"))
+```
+
+After controlling for county and year fixed effects, the $R^2$ jumped significantly to 0.85 for HHI and 0.79 for Shannon, which means a lot of omitted variable bias has been controlled for with county and year fixed effects.
+
+## Differences in Differences
+
+### Parallel Trends
+
+#### Creating Treatment and Post Variables
+
+```{r}
+H1bdf <- H1bdf %>%
+  mutate(Post = ifelse(YEAR >= 2017, 1, 0))  # Post-treatment period
+
+```
+
+#### Creating Relative Year Variable
+
+```{r}
+H1bdf <- H1bdf %>%
+  mutate(
+    event_time = YEAR - 2017,  # Define event time relative to treatment year
+    event_time = ifelse(event_time < -5, -5, event_time),  # Group <= -5 into one category
+    event_time = ifelse(event_time > 5, 5, event_time)  # Group >= 5 into one category
+  )
+```
+
+## Event Study Regression
+
+```{r}
+event_study_hhi <- feols(log_hhi ~ i(event_time, win_rate, ref = -1) + factor(COUNTY) + factor(YEAR), data = H1bdf, cluster = "COUNTY")
+
+event_study_shannon <- feols(log_shannon ~ i(event_time, win_rate, ref = -1) + factor(COUNTY) + factor(YEAR), data = H1bdf, cluster = "COUNTY")
+
+summary(event_study_hhi)
+summary(event_study_shannon)
+
+iplot(event_study_shannon,
+      main = "Event Study: Effect of H-1B Lottery Win Rate Over Time",
+      xlab = "Years Relative to Event",
+      ylab = "Effect of Win Rate on Log(HHI)")
+```
+
+## Event Study Business Counts
+
+```{r}
+event_study_counts <- feols(log_estab ~ i(event_time, win_rate, ref = -1) | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+
+summary(event_study_counts)
+
+iplot(event_study_counts,
+      main = "Event Study: Effect of H-1B Win Rate on Business Counts",
+      xlab = "Years Relative to Event",
+      ylab = "Effect of Win Rate on Log(Counts)",
+      ci = 0.9)
+```
+
+Parallel trends assumption holds because pre-treatment coefficients are all near-zero and statistically insignificant. Post-treatment effects show a causal impact of an H-1B visa increasing business diversity.
+
+## Continuous Difference in Differences
+
+```{r}
+# Set panel structure (COUNTY = panel ID, YEAR = time variable)
+H1bdf <- H1bdf %>%
+  mutate(COUNTY = as.factor(COUNTY), YEAR = as.integer(YEAR))
+
+did_continuous_hhi <- feols(log_hhi ~ win_rate * Post | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+
+summary(did_continuous_hhi)
+```
+
+The P value is near 0 using, meaning that this coefficient is highly significant. This means that a 1 percentage point increase in H-1B win rate is associated with a 0.063% decline in the HHI index. Or, an increase in H-1B win rates increases business diversity.
+
+Standard Error Treament used was Driscoll-Kraay, which is robust to spatial and temporal dependence.
+
+## Heterogeneity
+
+### Mediation Regressions
+
+```{r}
+library(modelsummary)
+
+feols(log_hhi ~ win_rate * Post | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+
+feols(log_estab ~ win_rate * Post | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+
+feols(log_hhi ~ win_rate * Post + log_estab | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+
+models <- list(
+  "log(ESTAB)" = feols(log_hhi ~ win_rate * Post | COUNTY + YEAR, cluster = "COUNTY", data = H1bdf),
+  "log(HHI)" = feols(log_estab ~ win_rate * Post | COUNTY + YEAR, cluster = "COUNTY", data = H1bdf),
+  "log(HHI) w/ mediator" = feols(log_hhi ~ win_rate + log_estab | COUNTY + YEAR, cluster = "COUNTY", data = H1bdf)
+)
+
+modelsummary(models,
+             stars = TRUE,
+             coef_rename = c("win_rate" = "Win Rate", "log(ESTAB)" = "log(Counts)"),
+             gof_omit = "Adj|AIC|BIC|Log.Lik|RMSE",
+             output = "latex",
+             notes = "Standard errors clustered by county in parentheses. *** p<0.01, ** p<0.05, * p<0.10")
+```
+
+### Firm Level Data + NAICS Fixed Effects
+
+```{r}
+feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, cluster = "COUNTY", data = ProsemData)
+```
+
+### Immigrant heavy industries
+
+```{r}
+abs_data <- as.data.table(read.csv("Annual_Business_Survey.csv"))
+
+abs_data <- abs_data[OWNCHAR == "EM"]
+
+naics_counts <- abs_data[, .N, by = NAICS2022][order(-N)]
+```
+
+```{r}
+setDT(ProsemData)
+
+ImmigrantHeavy <- ProsemData[, skill_group := fcase(
+  NAICS %in% c(6211, 5412, 5413, 5415, 5416, 5112, 5182, 5191, 5242), "High",
+  NAICS %in% c(5617, 5613, 7225, 7211, 8121, 2383, 2382, 2389, 6216, 6231, 6232, 6233, 6241, 6244, 4853, 3118, 4461, 4451, 4481, 4471, 8111, 8123), "Low",
+  default = "Other"
+)]
+
+ImmigrantHeavy <- ImmigrantHeavy[skill_group %in% c("Low", "High")]
+LowSkill <- ImmigrantHeavy[skill_group == "Low"]
+HighSkill <- ImmigrantHeavy[skill_group == "High"]
+
+```
+
+```{r}
+feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = ImmigrantHeavy, cluster = "COUNTY")
+
+feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = HighSkill, cluster = "COUNTY")
+
+feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = LowSkill, cluster = "COUNTY")
+```
+
+## Robustness Checks
+
+### Placebo Test
+
+```{r}
+H1bdf <- H1bdf %>%
+  mutate(Post_Placebo = ifelse(YEAR >= 2016, 1, 0))
+
+placebo_model <- feols(log_hhi ~ win_rate * Post_Placebo + i(COUNTY) + i(YEAR), data = H1bdf, cluster = "COUNTY")
+
+summary(placebo_model)
+```
+
+P value of placebo test is not statistically significant at the 10% level.
+
+### Interpretation
+
+```{r}
+sd_logshannon <- sd(H1bdf$log_shannon, na.rm = TRUE)
+effect_shannon <- 0.0265  # or whatever your DiD coefficient is
+percent_sd <- (effect_shannon / sd_logshannon) * 100
+
+sd_loghhi <- sd(H1bdf$log_hhi, na.rm = TRUE)
+effect_hhi <- -0.0657
+percent_sd_hhi <- (abs(effect_hhi) / sd_loghhi) * 100
+
+print(percent_sd_hhi)
+print(percent_sd)
+```
+
+## DiD Using Driscoll-Kray Standard Errors
+
+### Original DiD using HHI
+
+```{r}
+did_countyDK <- feols(log_hhi ~ win_rate * Post | COUNTY + YEAR, data = H1bdf, panel.id = ~COUNTY + YEAR, se = "dk")
+
+event_studydk <- feols(log_hhi ~ i(event_time, win_rate, ref = -1) + factor(COUNTY) + factor(YEAR), data = H1bdf, panel.id = ~COUNTY + YEAR, se = "dk")
+
+summary(did_countyDK)
+
+iplot(event_studydk,
+      main = "Event Study: Effect of H-1B Win Rate on Business Counts",
+      xlab = "Years Relative to Event",
+      ylab = "Effect of Win Rate on Log(Counts)")
+```
+
+### Placebo DiD using HHI
+
+```{r}
+did_countyDK_Placebo <- feols(log_hhi ~ win_rate * Post_Placebo + i(COUNTY) + i(YEAR), data = H1bdf, panel.id = ~COUNTY + YEAR, se = "dk")
+
+summary(did_countyDK_Placebo)
+```
+
+Using a county clustering standard error treatment, the P-value for the original regression is marginally statistically significant (P \< 0.1) but the P-value for the placebo is not statistically significant. While using Driscoll-Kraay SEs, the original regression is highly statistically significant (P \< 0.01) while the placebo is only statistically significant at the 5% level (P \< 0.05). Since both standard error treatments show that the placebo P-value is larger than the original P-value, this supports the parallel trends assumption and strenghthens the causal interpretation. However, using Driscoll-Kraay SEs seems like it is overinflating P values across the board, because all P values including in all the DiD regressions and event study are statistically significant to a very small level.
+
+### Conducting regression using Shannon Diversity Index
+
+```{r}
+did_continuous_shannon <- feols(log_shannon ~ win_rate * Post | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+
+summary(did_continuous_shannon)
+```
+
+```{r}
+placebo_model_shannon <- feols(log_shannon ~ win_rate * Post_Placebo + i(COUNTY) + i(YEAR), data = H1bdf, cluster = "COUNTY")
+
+summary(placebo_model_shannon)
+```
+
+### Excluding 2020 and 2021
+
+```{r}
+did_continuous_hhi_subset <- feols(log_hhi ~ win_rate * Post + i(COUNTY) + i(YEAR), data = H1bdf %>% filter(YEAR < 2020), cluster = "COUNTY")
+
+summary(did_continuous_hhi_subset)
+
+haven::write_dta("H1bdf.dta", data = H1bdf)
+```
+
+Excluding 2020 and 2021 yields a similar coefficient to the main regression. Therefore, this suggests my coefficient is likely to be causal.
+
+## Extra Visualizations
+
+```{r}
+library(tidycensus)
+library(dplyr)
+library(ggplot2)
+library(sf)
+
+
+# Download county boundaries for all states
+us_counties_2017 <- tigris::counties(cb = TRUE, year = 2017) 
+
+# Convert FIPS to match your dataset (strip leading zeros)
+us_counties_2017 <- us_counties_2017 %>%
+  mutate(fips = as.character(as.numeric(GEOID)))
+
+# Check structure
+head(us_counties_2017)
+
+H1bdf2017 <- H1bdf[H1bdf$YEAR == 2017,]
+
+map_data <- left_join(us_counties_2017, H1bdf2017, by = c("GEOID" = "COUNTY"))
+
+map_data <- map_data %>% filter(STATEFP != "02") %>% filter(STATEFP != "15") %>% filter(STATEFP != "43")
+```
+
+```{r}
+library(sf)
+library(viridis)
+
+# Reproject to a U.S.-focused CRS
+map_data <- st_transform(map_data, crs = 5070)  # USA Albers Equal-Area
+
+ggplot(map_data) +
+  geom_sf(aes(fill = log_hhi), color = "white", lwd = 0.05) +
+  scale_fill_viridis_c(option = "plasma", name = "NAICS Categories") +
+  labs(title = "Number of Unique NAICS Categories per County",
+       caption = "Source: CBP & Census Data") +
+  theme_minimal() +
+  theme(
+    legend.position = c(0.9, 0.15),  # Moves legend inside map
+    legend.background = element_rect(fill = "white", color = "black"),
+    legend.key = element_rect(fill = "white")
+  ) +
+  coord_sf(
+    xlim = c(-2500000, 2500000),  # Manually set U.S. bounding box in meters
+    ylim = c(-70000, 3200000),  
+    expand = FALSE
+  )
+```
+
+```{r}
+library(ggplot2)
+
+# Table 2 data
+event_time <- c(-5, -4, -3, -2, 0, 1, 2, 3, 4, 5)
+coeff <- c(-0.003306, -0.003757, 0.004117, 0.003612, -0.067812,
+          -0.066438, -0.065368, -0.064380, -0.057434, -0.058553)
+se <- c(0.01745044, 0.01295252, 0.00914417, 0.00636837, 0.04351837,
+        0.04038470, 0.03893465, 0.03986916, 0.03947110, 0.03828369)
+
+# 90% confidence intervals
+upper <- coeff + 1.645 * se
+lower <- coeff - 1.645 * se
+
+# Data frame
+df <- data.frame(event_time, coeff, upper, lower)
+
+# Add baseline (year -1) manually
+df <- rbind(df, data.frame(
+  event_time = -1,
+  coeff = 0,
+  upper = NA,
+  lower = NA
+))
+
+# Sort the data so -1 is in the right place
+df <- df[order(df$event_time), ]
+
+# Plot
+ggplot(df, aes(x = event_time, y = coeff)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(size = 2) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2) +
+  labs(title = "Event Study: Effect of H-1B Lottery Win Rate Over Time",
+       x = "Years Since Lottery (t)",
+       y = "Effect of Win Rate on log(HHI)") +
+  theme_minimal()
+
+```
+
+### Event Study Using DK SEs
+
+```{r}
+event_study_hhidk <- feols(log_hhi ~ i(event_time, win_rate, ref = -1) + factor(COUNTY) + factor(YEAR), data = H1bdf, panel.id = ~COUNTY + YEAR, se = "dk")
+
+summary(event_study_hhidk)
+```
+
+```{r}
+# Create the data frame (copied from the previous step)
+dk_event_study <- data.frame(
+  event_time = c(-5, -4, -3, -2, 0, 1, 2, 3, 4, 5),
+  estimate = c(
+    -0.003306, -0.003757, 0.004117, 0.003612,
+    -0.067812, -0.066438, -0.065368, -0.064380,
+    -0.057434, -0.058553  # Add NA placeholder if t=5 missing
+  ),
+  std_error = c(
+    rep(0.000010, 10)
+  )
+)
+
+# Add event_time = -1 with estimate and std_error set to 0
+dk_event_study <- bind_rows(
+  dk_event_study,
+  data.frame(event_time = -1, estimate = 0, std_error = 0)
+) %>%
+  arrange(event_time) %>%
+  mutate(
+    lower = estimate - 1.645 * std_error,
+    upper = estimate + 1.645 * std_error
+  )
+
+# Plot
+ggplot(dk_event_study, aes(x = event_time, y = estimate)) +
+  geom_line(color = "black") +
+  geom_point(color = "black") +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = "gray") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  labs(
+    title = "Event Study with Driscoll-Kraay SEs (HHI)",
+    x = "Years Since Lottery (t)",
+    y = "Effect of Win Rate on log(HHI)"
+  ) +
+  theme_minimal()
+
+
+```

@@ -1,0 +1,303 @@
+---
+title: "ECON 4198W Data Cleaning Part 1"
+author: "Spencer Ma"
+date: "2025-02-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(scientific=T, digits = 7)
+```
+
+# Data Cleaning CBP Data
+
+## Upload 2014-2016 datasets and remove unnecessary rows
+
+```{r}
+library(data.table)
+
+# 1. List your 2014–2016 CSV files (adjust paths/patterns as needed)
+folder_path <- "C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/Tables"
+files_2014_2016 <- list.files(folder_path, pattern = "2014|2015|2016\\.csv$", full.names = TRUE)
+
+# 2. Read and combine all 2014–2016 files
+dt_list <- lapply(files_2014_2016, fread, header = TRUE)
+cbp_2014_2016 <- rbindlist(dt_list, fill = TRUE)
+
+# 3. Filter to keep only "All establishments" rows
+#    Often, LFO = "001" and EMPSZES = "001" indicate “All establishments.”
+#    Alternatively, you can filter by label columns (LFO_LABEL, EMPSZES_LABEL).
+cbp_2014_2016_all <- cbp_2014_2016[
+  LFO == "001" & EMPSZES == "001"
+]
+
+# 4. Inspect the result
+head(cbp_2014_2016_all)
+unique(cbp_2014_2016_all$EMPSZES_LABEL)
+unique(cbp_2014_2016_all$LFO_LABEL)
+
+```
+I uploaded the datasets from 2014-2016 and combined them while removing all the extra counts that are not the total counts of establishments.
+
+## Removing unnecessary columns for 2014-2016 Datasets
+
+```{r}
+library(dplyr)
+cbp_2014_2016_cleaned <- cbp_2014_2016_all %>% select(GEO_ID, NAME, NAICS2012, NAICS2012_LABEL, LFO, EMPSZES, YEAR, ESTAB)
+```
+
+## 2012-2013 Datasets
+
+```{r}
+# 1. List your 2012–2013 CSV files (adjust paths/patterns as needed)
+folder_path <- "C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/Tables"
+files_2012_2013 <- list.files(folder_path, pattern = "2012|2013\\.csv$", full.names = TRUE)
+
+# 2. Read and combine all 2014–2016 files
+dt_list <- lapply(files_2012_2013, fread, header = TRUE)
+cbp_2012_2013 <- rbindlist(dt_list, fill = TRUE)
+
+# 3. Filter to keep only "All establishments" rows
+#    Often, LFO = "001" and EMPSZES = "001" indicate “All establishments.”
+#    Alternatively, you can filter by label columns (LFO_LABEL, EMPSZES_LABEL).
+cbp_2012_2013_all <- cbp_2012_2013[
+  LFO == "001" & EMPSZES == "001"
+]
+
+# 4. Inspect the result
+head(cbp_2012_2013_all)
+unique(cbp_2012_2013_all$EMPSZES_LABEL)
+unique(cbp_2012_2013_all$LFO_LABEL)
+
+cbp_2012_2013_cleaned <- cbp_2012_2013_all %>% select(GEO_ID, NAME, NAICS2012, NAICS2012_LABEL, LFO, EMPSZES, YEAR, ESTAB)
+```
+
+## Merge 2012-2013 and 2014-2016 datasets
+
+```{r}
+cbp_2012_2016 <- rbindlist(list(cbp_2012_2013_cleaned, cbp_2014_2016_cleaned), fill = TRUE)
+
+cbp_2012_2016[, ESTAB :=as.numeric(ESTAB)]
+cbp_2012_2016[, YEAR :=as.integer(YEAR)]
+```
+
+```{r}
+#write.csv(cbp_2012_2016, "C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/Tables/cbp_2012_2016.csv", row.names = FALSE)
+```
+
+## 2017-2022 Datasets
+
+```{r}
+# 1. List your 2014–2016 CSV files (adjust paths/patterns as needed)
+folder_path <- "C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/Tables"
+files_2017_2022 <- list.files(folder_path, pattern = "2017|2018|2019|2020|2021|2022\\.csv$", full.names = TRUE)
+
+# 2. Read and combine all 2014–2016 files
+dt_list <- lapply(files_2017_2022, fread, header = TRUE)
+cbp_2017_2022 <- rbindlist(dt_list, fill = TRUE)
+
+# 3. Filter to keep only "All establishments" rows
+#    Often, LFO = "001" and EMPSZES = "001" indicate “All establishments.”
+#    Alternatively, you can filter by label columns (LFO_LABEL, EMPSZES_LABEL).
+cbp_2017_2022_all <- cbp_2017_2022[
+  LFO == "001" & EMPSZES == "001"
+]
+
+# 4. Inspect the result
+head(cbp_2017_2022_all)
+unique(cbp_2017_2022_all$EMPSZES_LABEL)
+unique(cbp_2017_2022_all$LFO_LABEL)
+
+cbp_2017_2022_cleaned <- cbp_2017_2022_all %>% select(GEO_ID, NAME, NAICS2017, NAICS2017_LABEL, LFO, EMPSZES, YEAR, ESTAB)
+
+cbp_2017_2022_cleaned$ESTAB <- as.numeric(cbp_2017_2022_cleaned$ESTAB)
+cbp_2017_2022_cleaned$YEAR <- as.integer(cbp_2017_2022_cleaned$YEAR)
+```
+
+```{r}
+#write.csv(cbp_2017_2022_cleaned, "C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/Tables/cbp_2017_2022.csv", row.names = FALSE)
+```
+
+## Merging 2012 NAICS codes to 2017 NAICS codes
+
+```{r}
+# 1. Read the Crosswalk and Create 4-digit Keys
+crosswalk <- fread("C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/NAICS 2012-2017/2012_to_2017_NAICS.csv")
+
+# Create 4-digit versions for matching:
+crosswalk[, NAICS2012_4 := substr(NAICS2012, 1, 4)]
+crosswalk[, NAICS2017_4 := substr(NAICS2017, 1, 4)]
+
+crosswalk_4digit <- crosswalk %>% select(NAICS2012_4, NAICS2017_4)
+
+crosswalk_4unique <- unique(crosswalk_4digit, by = c("NAICS2012_4", "NAICS2017_4"))
+```
+
+NAICS codes in the CBP datasets are in 4 digits, while the crosswalk is in 6 digits. I had to aggregate the crosswalk dataset to match the CBP data.
+
+```{r}
+# 3. Merge pre_data with the crosswalk using the 4-digit NAICS2012 code
+mapped_pre_data <- merge(cbp_2012_2016, crosswalk_4unique, 
+                         by.x = "NAICS2012", 
+                         by.y = "NAICS2012_4", 
+                         all.x = TRUE,
+                         allow.cartesian = TRUE)
+
+# 4. Create a new column with the NAICS 2017 code (using the 4-digit crosswalk value)
+mapped_pre_data[, NAICS := NAICS2017_4]
+
+# 5. (Optional) Remove any columns you no longer need, such as the original NAICS columns from the crosswalk:
+mapped_pre_data[, c("NAICS2012", "NAICS2017_4") := NULL]
+
+# 6. Inspect the result
+head(mapped_pre_data)
+
+```
+
+## Combining 2012-2016 to 2017-2022 Data
+
+```{r}
+setnames(cbp_2017_2022_cleaned, "NAICS2017", "NAICS")
+```
+
+```{r}
+library(stringr)
+
+cbp_2012_2022_unsorted <- rbindlist(list(mapped_pre_data, cbp_2017_2022_cleaned), fill = TRUE)
+
+cbp_2012_2022 <- cbp_2012_2022_unsorted %>%
+  mutate(State = str_extract(NAME, ",\\s*(.*)$") %>% str_remove(",\\s*")) %>%
+  arrange(YEAR, State, NAME)
+
+cbp_2012_2022 <- cbp_2012_2022 %>% select(GEO_ID, NAME, YEAR, ESTAB, NAICS)
+
+head(cbp_2012_2022)
+```
+
+## Exporting Dependent Variable Dataset
+
+```{r}
+write.csv(cbp_2012_2022, "C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/Tables/cbp_2012_2022.csv", row.names = FALSE)
+```
+
+# Dataviz
+
+```{r}
+library(data.table)
+file_path = "C:/Users/maray/Documents/ECON 4198W/Datasets/CBP Data/Tables/cbp_2012_2022.csv"
+
+cbp_2012_2022 <- fread(file_path)
+```
+
+```{r}
+county_naics_counts_2022 <- subset(cbp_2012_2022, YEAR == 2022)
+county_naics_counts_2022 <- county_naics_counts_2022[, .(num_naics = uniqueN(NAICS)), by = GEO_ID]
+```
+
+```{r}
+library(tidycensus)
+library(dplyr)
+library(ggplot2)
+library(sf)
+
+
+# Download county boundaries for all states
+us_counties_2022 <- tigris::counties(cb = TRUE, 
+                     resolution = "20m", 
+                     progress_bar = FALSE,
+                     year = 2022) |>
+  filter(NAME != "Puerto Rico") |>
+  tigris::shift_geometry()
+
+territory_codes <- c("60", "66", "69", "72", "78")
+
+us_counties_2022 <- us_counties_2022 |>
+  filter(!STATEFP %in% territory_codes)
+
+# Download population data for all counties
+pop_2022 <- get_acs(geography = "county",
+                    variables = "B01003_001",
+                    year = 2022,
+                    survey = "acs5",
+                    output = "wide")
+
+# Convert FIPS to match your dataset (strip leading zeros)
+us_counties_2022 <- us_counties_2022 %>%
+  mutate(fips = as.character(as.numeric(GEOID)))
+
+# Check structure
+head(us_counties_2022)
+
+plot(st_geometry(us_counties_2022))
+```
+
+```{r}
+county_naics_counts_2022 <- county_naics_counts_2022 |>
+  rename(AFFGEOID = GEO_ID)
+
+map_data <- left_join(us_counties_2022, county_naics_counts_2022, by = "AFFGEOID")
+
+pop_2022 <- pop_2022 |>
+  transmute(GEOID, population = B01003_001E)
+
+map_data <- map_data |>
+  left_join(pop_2022, by = "GEOID")
+
+map_data <- map_data |>
+  mutate(
+    naics_per_10k = num_naics / population * 10000)
+
+sum(is.na(map_data$num_naics))
+
+map_data <- map_data |>
+  filter(!is.na(num_naics))
+```
+
+```{r}
+model <- lm(num_naics ~ log(population), data = map_data)
+map_data$residual_naics = residuals(model)
+
+library(dplyr)
+
+# Calculate percentiles
+lower <- quantile(map_data$residual_naics, 0.01, na.rm = TRUE)
+upper <- quantile(map_data$residual_naics, 0.99, na.rm = TRUE)
+
+# Winsorize
+map_data <- map_data %>%
+  mutate(residual_naics = pmin(pmax(residual_naics, lower), upper))
+
+```
+
+```{r}
+library(ggplot2)
+library(sf)
+library(viridis)
+
+# Reproject to a U.S.-focused CRS
+map_data <- st_transform(map_data, crs = 5070)  # USA Albers Equal-Area
+
+ggplot(map_data) +
+  geom_sf(aes(fill = residual_naics), color = "white", lwd = 0.05) +
+  scale_fill_viridis_c(
+    option = "plasma", 
+    name = "Residuals") +
+  labs(title = "Residuals from NAICS Categories Regression on Log Population (2022)",
+       caption = "Source: CBP & Census Data") +
+  theme_minimal() +
+  theme(
+    legend.position = c(0.9, 0.15),  # Moves legend inside map
+    legend.background = element_rect(fill = "white", color = "black"),
+    legend.key = element_rect(fill = "white")
+  ) +
+  coord_sf(
+    xlim = c(-2500000, 2500000),  # Manually set U.S. bounding box in meters
+    ylim = c(-70000, 3200000),  
+    expand = FALSE
+  )
+
+
+#ggsave("NAICS_map.png", width = 12, height = 8, dpi = 600, bg = "white")
+
+```
