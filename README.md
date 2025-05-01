@@ -65,8 +65,11 @@ install.packages(c(
 - **`Lottery_Applications_vs_Approvals.csv`**  
   Merged county-level H-1B lottery data (USCIS + LCA)  
 
-- **`H1bdf.csv` / `ProsemData.csv`**  
+- **`H1bdf.csv`**  
   Final panel dataset used in regression analysis  
+
+- **`ProsemData.csv`**  
+  Larger dataset used to analyze heterogeneity
   [Download from Google Drive](#)
 
 
