@@ -45,21 +45,21 @@ install.packages(c(
 ### Input Files
 
 - **`CBP files`**  
-  All CBP files from 2012–2022  
+  All CBP files from 2012–2022. Make sure to place it under Datasets\Tables  
   [Download from Google Drive](#)
 
 - **`H-1B Employer Data Hub (2016)`**  
   The 2016 USCIS H-1B Data Hub file  
 
 - **`H-1B_Disclosure_Data_FY16.xlsx`**  
-  LCA data for the 2016 H-1B lottery  
+  LCA data for the 2016 H-1B lottery. Make sure to place it under Datasets\H-1B Data  
   [Download from Google Drive](#)
 
 
 ## Output Files
 
 - **`cbp_2012_2022.csv`**  
-  Cleaned County Business Patterns dataset  
+  Cleaned County Business Patterns dataset. This goes in the main folder.  
   [Download from Google Drive](#)
 
 - **`Lottery_Applications_vs_Approvals.csv`**  
@@ -69,7 +69,7 @@ install.packages(c(
   Final panel dataset used in regression analysis  
 
 - **`ProsemData.csv`**  
-  Larger dataset used to analyze heterogeneity  
+  Larger dataset used to analyze heterogeneity. This goes in the main folder.  
   [Download from Google Drive](#)
 
 
