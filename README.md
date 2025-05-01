@@ -50,7 +50,6 @@ install.packages(c(
 
 - **`H-1B Employer Data Hub (2016)`**  
   The 2016 USCIS H-1B Data Hub file  
-  [Download from Google Drive](#)
 
 - **`H-1B_Disclosure_Data_FY16.xlsx`**  
   LCA data for the 2016 H-1B lottery  
