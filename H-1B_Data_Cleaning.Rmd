@@ -9,6 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 options(scientific=T, digits = 7)
 knitr::opts_chunk$set(warning = FALSE, results = 'hide', message = F)
+library(here)
 ```
 
 # Data Cleaning H-1B Data
@@ -20,14 +21,16 @@ library(data.table)
 library(readxl)
 
 # Define the file path
-file_path <- "C:/Users/maray/Documents/ECON 4198W/Datasets/H-1B Data/H-1B_Disclosure_Data_FY16.xlsx"
+file_path <- here("Datasets", "H-1B Data",  "H-1B_Disclosure_Data_FY16.xlsx")
 
 # Read the sheet into a data.table
 H1B2016_Disclosure_Data <- as.data.table(read_excel(file_path, sheet = 1))
 ```
 
 ```{r}
-H1BFY2017_employer_data_hub <- as.data.table(read_excel("C:/Users/maray/Documents/ECON 4198W/Datasets/H-1B Data/H-1B Employer Data Hub (2017).xlsx", sheet = 1))
+H1BFY2017_employer_data_hub <- as.data.table(
+  read_excel(here("Datasets", "H-1B Data", "H-1B Employer Data Hub (2017).xlsx"), sheet = 1)
+)
 ```
 
 ## Visualization of the 2016 H-1B Disclosure Data
@@ -57,7 +60,8 @@ head(weekly_counts)
 ### Visualizing other years
 
 ```
-file_path_2 <- "C:/Users/maray/Documents/ECON 4198W/Datasets/H-1B Data/H-1B_Disclosure_Data_FY2019.xlsx"
+file_path_2 <- here("Datasets", "H-1B Data",  "H-1B_Disclosure_Data_FY2019.xlsx")
+
 
 H1B2012_Disclosure_Data <- as.data.table(read_excel(file_path_2, sheet = 1))
 ```

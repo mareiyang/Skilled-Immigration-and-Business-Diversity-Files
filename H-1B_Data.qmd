@@ -123,8 +123,37 @@ H1bdf <- H1bdf %>%
   select(-state_fips)
 
 library(haven)
-write_dta("H1bdf.dta", data = H1bdf)
+#write_dta("H1bdf.dta", data = H1bdf)
 
+```
+
+```{r}
+CBP_data_2022 <- CBP_data |>
+  filter(YEAR == 2022)
+
+calculate_indices <- function(CBP_data_2022){
+  total <- sum(CBP_data_2022$ESTAB)
+  p_i <- CBP_data_2022$ESTAB / total
+  
+  # Shannon Index: -sum(p_i * ln(p_i))
+  shannon <- -sum(p_i * log(p_i))
+  
+  # Herfindahl-Hirschman Index: sum(p_i^2)
+  hhi <- sum(p_i^2)*10000
+  
+  return(data.frame(shannon_index = shannon, hhi = hhi, ESTAB = total))
+}
+
+CBP_diversity <- CBP_data_2022 |>
+  group_by(GEO_ID, NAME, YEAR) |>
+  group_modify(~ calculate_indices(.x)) |>
+  ungroup()
+
+CBP_diversity <- CBP_diversity |>
+  mutate(
+    log_hhi = log(hhi),
+    log_shannon = log(shannon_index)
+  )
 ```
 
 ## Descriptive Statistics
@@ -151,6 +180,12 @@ sd(diversityrank$hhi, na.rm = TRUE)
 sd(diversityrank$hhi, na.rm = TRUE)/4
 ```
 
+```{r}
+diversityrank_full <- CBP_diversity |>
+  mutate(HHI_rank = min_rank(hhi))
+
+```
+
 ### Visualizations
 
 ```{r}
@@ -166,7 +201,8 @@ ggplot(H1bdf, aes(x = hhi)) +
 
 ggplot(H1bdf, aes(x = win_rate)) +
   geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
-  labs(title = "Distribution of H-1B Visa Win Rate", x = "Win Rate", y = "Count")
+  labs(title = "Distribution of H-1B Visa Win Rate", x = "Win Rate", y = "Count") +
+  theme_classic()
 
 ```
 
@@ -464,37 +500,46 @@ Excluding 2020 and 2021 yields a similar coefficient to the main regression. The
 
 ```{r}
 library(tidycensus)
-library(dplyr)
 library(ggplot2)
 library(sf)
 
 
 # Download county boundaries for all states
-us_counties_2017 <- tigris::counties(cb = TRUE, year = 2017) 
+us_counties_2022 <- tigris::counties(cb = TRUE, 
+                     resolution = "20m", 
+                     progress_bar = FALSE,
+                     year = 2022) |>
+  filter(NAME != "Puerto Rico") |>
+  tigris::shift_geometry()
 
 # Convert FIPS to match your dataset (strip leading zeros)
-us_counties_2017 <- us_counties_2017 %>%
+us_counties_2022 <- us_counties_2022 %>%
   mutate(fips = as.character(as.numeric(GEOID)))
 
 # Check structure
-head(us_counties_2017)
+head(us_counties_2022)
 
-H1bdf2017 <- H1bdf[H1bdf$YEAR == 2017,]
-
-map_data <- left_join(us_counties_2017, H1bdf2017, by = c("GEOID" = "COUNTY"))
-
-map_data <- map_data %>% filter(STATEFP != "02") %>% filter(STATEFP != "15") %>% filter(STATEFP != "43")
+map_data <- left_join(us_counties_2022, CBP_diversity, by = c("AFFGEOID" = "GEO_ID"))
 ```
 
 ```{r}
-library(sf)
+# Calculate percentiles
+lower <- quantile(map_data$shannon_index, 0.01, na.rm = TRUE)
+upper <- quantile(map_data$shannon_index, 0.99, na.rm = TRUE)
+
+# Winsorize
+map_data <- map_data %>%
+  mutate(residual_naics = pmin(pmax(log_shannon, lower), upper))
+```
+
+```{r}
 library(viridis)
 
 # Reproject to a U.S.-focused CRS
 map_data <- st_transform(map_data, crs = 5070)  # USA Albers Equal-Area
 
 ggplot(map_data) +
-  geom_sf(aes(fill = log_hhi), color = "white", lwd = 0.05) +
+  geom_sf(aes(fill = shannon_index), color = "white", lwd = 0.05) +
   scale_fill_viridis_c(option = "plasma", name = "NAICS Categories") +
   labs(title = "Number of Unique NAICS Categories per County",
        caption = "Source: CBP & Census Data") +
@@ -512,8 +557,6 @@ ggplot(map_data) +
 ```
 
 ```{r}
-library(ggplot2)
-
 # Table 2 data
 event_time <- c(-5, -4, -3, -2, 0, 1, 2, 3, 4, 5)
 coeff <- c(-0.003306, -0.003757, 0.004117, 0.003612, -0.067812,
@@ -549,6 +592,28 @@ ggplot(df, aes(x = event_time, y = coeff)) +
        x = "Years Since Lottery (t)",
        y = "Effect of Win Rate on log(HHI)") +
   theme_minimal()
+
+```
+
+### Number of days until H-1B cap is filled
+
+```{r}
+years <- 2002:2020
+
+days_open <- c(365, 365, 322, 183, 131, 55, 2, 5, 264, 300, 235, 71, 5, 5, 5, 5, 5, 5, 5)
+
+cap_filled <- data.frame(FiscalYear = years, DaysOpen = days_open)
+
+ggplot(cap_filled, aes(x = FiscalYear, y = DaysOpen)) +
+  geom_line() +
+  geom_point() +
+  scale_x_continuous(breaks = seq(2002, 2020, by = 2)) +
+  scale_y_continuous(breaks = seq(0,360, by = 60)) +
+  theme_classic() +
+  labs(
+    x = "Fiscal Year",
+    y = "H-1B Cap-Subject Application Period\n(Days from Start of Filing to Final Receipt Date)"
+  )
 
 ```
 
