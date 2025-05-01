@@ -69,7 +69,7 @@ install.packages(c(
   Final panel dataset used in regression analysis  
 
 - **`ProsemData.csv`**  
-  Larger dataset used to analyze heterogeneity
+  Larger dataset used to analyze heterogeneity  
   [Download from Google Drive](#)
 
 
