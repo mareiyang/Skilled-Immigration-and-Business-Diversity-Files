@@ -42,16 +42,31 @@ install.packages(c(
 3. H-1B_Data.qmd
    Merges CBP and H-1B lottery datasets, calculates Herfindahl-Hirschman and Shannon Diversity indices and estimates regression models using "fixest."
 
+## Input Files
+
+- **`CBP files`**
+  All CBP files from 2012-2022
+  [Download from Google Drive](#)
+
+- **`H-1B Employer Data Hub (2016)`**
+  The 2016 USCIS H-1B Data Hub file
+
+- **`H-1B_Disclosure_Data_FY16`**
+  [Download from Google Drive](#)
+
 ## Output Files
 
-cbp_2012_2022.csv: 
-cleaned CBP dataset, can be found at this Google Drive link: [link here]
-Lottery_Applications_vs_Approvals.csv: 
-Merged county-level lottery data
-H1bdf.csv: 
-Final panel data used in regressions
-ProsemData.csv: 
-Final panel data used in regressions, can also be found on Google Drive
+- **`cbp_2012_2022.csv`**  
+  Cleaned County Business Patterns dataset  
+  [Download from Google Drive](#)
+
+- **`Lottery_Applications_vs_Approvals.csv`**  
+  Merged county-level H-1B lottery data (USCIS + LCA)  
+
+- **`H1bdf.csv` / `ProsemData.csv`**  
+  Final panel dataset used in regression analysis  
+  [Download from Google Drive](#)
+
 
 ## Author
 Spencer Ma
