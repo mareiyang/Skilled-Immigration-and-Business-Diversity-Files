@@ -1,6 +1,6 @@
-# Replication Code for Ma, 2025. Skilled Immigration and Business Diversity: Evidence From the H-1B Lottery
+# Replication Code for Ma, Spencer. 2025. Skilled Immigration and Business Diversity: Evidence From the H-1B Lottery
 
-This project provides the replication code and most of the datasets for **Ma, 2025. Skilled Immigration and Business Diversity: Evidence from the H-1B Lottery.
+This project provides the replication code and most of the datasets for **Ma, Spencer. 2025. Skilled Immigration and Business Diversity: Evidence from the H-1B Lottery.
 
 ```
 .
