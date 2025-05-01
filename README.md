@@ -2,7 +2,24 @@
 
 This project evaluates the effect of high-skilled immigration, proxied by H-1B lottery outcomes, on business diversity and firm concentration across U.S. counties. Using a continuous difference-in-differences framework and data from USCIS, the Department of Labor, and the U.S. Census Bureau, the study identifies modest but significant increases in business diversity following H-1B lottery wins.
 
-<pre><code>```text . ├── Datasets/ │ ├── CBP Data/ │ │ ├── Tables/ # Raw CBP CSV files (2012–2022) │ │ └── NAICS 2012-2017/ # Crosswalk from NAICS 2012 to 2017 │ ├── H-1B Data/ │ │ ├── H-1B Employer Data Hub (2017).xlsx │ │ ├── H-1B_Disclosure_Data_FY16.xlsx │ │ ├── H-1B_Disclosure_Data_FY2019.xlsx │ └── ZIP_COUNTY_122016.xlsx # HUD Zip-County crosswalk ├── CBP_Data_Cleaning.Rmd # Cleans County Business Patterns data ├── H-1B_Data_Cleaning.Rmd # Cleans USCIS + LCA data and constructs win rates ├── H-1B_Data.qmd # Merges datasets, computes HHI/Shannon, runs regressions ├── Proseminar_Final_Paper.pdf # Final thesis PDF ├── README.md ``` </code></pre>
+```
+.
+├── Datasets/
+│   ├── CBP Data/
+│   │   ├── Tables/                        # Raw CBP CSV files (2012–2022)
+│   │   └── NAICS 2012-2017/              # Crosswalk from NAICS 2012 to 2017
+│   ├── H-1B Data/
+│   │   ├── H-1B Employer Data Hub (2017).xlsx
+│   │   ├── H-1B_Disclosure_Data_FY16.xlsx
+│   │   ├── H-1B_Disclosure_Data_FY2019.xlsx
+│   └── ZIP_COUNTY_122016.xlsx            # HUD Zip-County crosswalk
+├── CBP_Data_Cleaning.Rmd                 # Cleans County Business Patterns data
+├── H-1B_Data_Cleaning.Rmd                # Cleans USCIS + LCA data and constructs win rates
+├── H-1B_Data.qmd                         # Merges datasets, computes HHI/Shannon, runs regressions
+├── Proseminar_Final_Paper.pdf            # Final thesis PDF
+├── README.md
+```
+
 All scripts assume the following relative folder layout (enabled by `here::here()`):
 
 ## Required R Packages
