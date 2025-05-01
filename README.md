@@ -1,6 +1,6 @@
-# Replication Code for Spencer Ma (2025): Skilled Immigration and Business Diversity: Evidence From the H-1B Lottery
+# Replication Code for Ma, 2025. Skilled Immigration and Business Diversity: Evidence From the H-1B Lottery
 
-This project evaluates the effect of high-skilled immigration, proxied by H-1B lottery outcomes, on business diversity and firm concentration across U.S. counties. Using a continuous difference-in-differences framework and data from USCIS, the Department of Labor, and the U.S. Census Bureau, the study identifies modest but significant increases in business diversity following H-1B lottery wins.
+This project provides the replication code and most of the datasets for **Ma, 2025. Skilled Immigration and Business Diversity: Evidence from the H-1B Lottery.
 
 ```
 .
