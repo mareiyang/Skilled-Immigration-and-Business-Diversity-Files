@@ -11,7 +11,6 @@ This project evaluates the effect of high-skilled immigration, proxied by H-1B l
 │   ├── H-1B Data/
 │   │   ├── H-1B Employer Data Hub (2017).xlsx
 │   │   ├── H-1B_Disclosure_Data_FY16.xlsx
-│   │   ├── H-1B_Disclosure_Data_FY2019.xlsx
 │   └── ZIP_COUNTY_122016.xlsx            # HUD Zip-County crosswalk
 ├── CBP_Data_Cleaning.Rmd                 # Cleans County Business Patterns data
 ├── H-1B_Data_Cleaning.Rmd                # Cleans USCIS + LCA data and constructs win rates
@@ -45,10 +44,14 @@ install.packages(c(
 
 ## Output Files
 
-cbp_2012_2022.csv: cleaned CBP dataset, can be found at this Google Drive link: [link here]
-Lottery_Applications_vs_Approvals.csv: Merged county-level lottery data
-H1bdf.csv: Final panel data used in regressions
-ProsemData.csv: Final panel data used in regressions, can also be found on Google Drive
+cbp_2012_2022.csv: 
+cleaned CBP dataset, can be found at this Google Drive link: [link here]
+Lottery_Applications_vs_Approvals.csv: 
+Merged county-level lottery data
+H1bdf.csv: 
+Final panel data used in regressions
+ProsemData.csv: 
+Final panel data used in regressions, can also be found on Google Drive
 
 ## Author
 Spencer Ma
