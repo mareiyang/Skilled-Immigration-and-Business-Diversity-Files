@@ -33,7 +33,7 @@ install.packages(c(
 ))
 ```
 
-## Scripts and Workflow:
+## Scripts and Workflows, Please run the scripts in the given order:
 
 1. CBP_Data_Cleaning.Rmd:
    Cleans County Business Patterns data from 2012-2022, harmonizes NAICS codes, and creates some maps.
