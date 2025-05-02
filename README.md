@@ -15,7 +15,6 @@ This project provides the replication code and most of the datasets for **Ma, Sp
 ├── CBP_Data_Cleaning.Rmd                 # Cleans County Business Patterns data
 ├── H-1B_Data_Cleaning.Rmd                # Cleans USCIS + LCA data and constructs win rates
 ├── H-1B_Data.qmd                         # Merges datasets, computes HHI/Shannon, runs regressions
-├── Proseminar_Final_Paper.pdf            # Final thesis PDF
 ├── README.md
 ```
 
