@@ -45,21 +45,21 @@ install.packages(c(
 
 - **`CBP files`**  
   All CBP files from 2012–2022. Make sure to place it under Datasets\Tables  
-  [Download from Google Drive](#) (Links don't work yet)
+  [Download from Google Drive](#https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 - **`H-1B Employer Data Hub (2016)`**  
   The 2016 USCIS H-1B Data Hub file  
 
 - **`H-1B_Disclosure_Data_FY16.xlsx`**  
   LCA data for the 2016 H-1B lottery. Make sure to place it under Datasets\H-1B Data  
-  [Download from Google Drive](#)
+  [Download from Google Drive](#https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 
 ## Output Files
 
 - **`cbp_2012_2022.csv`**  
   Cleaned County Business Patterns dataset. This goes in the main folder.  
-  [Download from Google Drive](#)
+  [Download from Google Drive](#https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 - **`Lottery_Applications_vs_Approvals.csv`**  
   Merged county-level H-1B lottery data (USCIS + LCA)  
@@ -69,7 +69,7 @@ install.packages(c(
 
 - **`ProsemData.csv`**  
   Larger dataset used to analyze heterogeneity. This goes in the main folder.  
-  [Download from Google Drive](#)
+  [Download from Google Drive](#https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 
 ## Author
