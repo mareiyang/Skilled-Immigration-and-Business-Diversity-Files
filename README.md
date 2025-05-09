@@ -34,11 +34,11 @@ install.packages(c(
 
 ## Scripts and Workflows, Please run the scripts in the given order:
 
-1. CBP_Data_Cleaning.Rmd:
+1. CBP_Data_Cleaning.Rmd:  
    Cleans County Business Patterns data from 2012-2022, harmonizes NAICS codes, and creates some maps.
-2. H-1B_Data_Cleeaning.Rmd
+2. H-1B_Data_Cleeaning.Rmd:  
    Cleans USCIS H-1B lottery approvals and LCA applications, matches by ZIP code to counties, filters for likely-lottery-bound applications, and constructs a county-level win-rate.
-3. H-1B_Data.qmd
+3. H-1B_Data.Qmd:  
    Merges CBP and H-1B lottery datasets, calculates Herfindahl-Hirschman and Shannon Diversity indices and estimates regression models using "fixest."
 
 ### Input Files
