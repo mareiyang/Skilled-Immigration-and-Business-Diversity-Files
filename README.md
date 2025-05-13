@@ -1,6 +1,6 @@
-# Skilled Immigration and Business Diversity: Evidence from the H-1B Lottery
+# Replication Code for Ma, Spencer. 2025. Skilled Immigration and Business Diversity: Evidence From the H-1B Lottery
 
-This project evaluates the effect of high-skilled immigration, proxied by H-1B lottery outcomes, on business diversity and firm concentration across U.S. counties. Using a continuous difference-in-differences framework and data from USCIS, the Department of Labor, and the U.S. Census Bureau, the study identifies modest but significant increases in business diversity following H-1B lottery wins.
+This project provides the replication code and most of the datasets for **Ma, Spencer. 2025. Skilled Immigration and Business Diversity: Evidence from the H-1B Lottery.
 
 ```
 .
@@ -15,7 +15,6 @@ This project evaluates the effect of high-skilled immigration, proxied by H-1B l
 ├── CBP_Data_Cleaning.Rmd                 # Cleans County Business Patterns data
 ├── H-1B_Data_Cleaning.Rmd                # Cleans USCIS + LCA data and constructs win rates
 ├── H-1B_Data.qmd                         # Merges datasets, computes HHI/Shannon, runs regressions
-├── Proseminar_Final_Paper.pdf            # Final thesis PDF
 ├── README.md
 ```
 
@@ -33,34 +32,34 @@ install.packages(c(
 ))
 ```
 
-## Scripts and Workflow:
+## Scripts and Workflows, Please run the scripts in the given order:
 
-1. CBP_Data_Cleaning.Rmd:
+1. CBP_Data_Cleaning.Rmd:  
    Cleans County Business Patterns data from 2012-2022, harmonizes NAICS codes, and creates some maps.
-2. H-1B_Data_Cleeaning.Rmd
+2. H-1B_Data_Cleeaning.Rmd:  
    Cleans USCIS H-1B lottery approvals and LCA applications, matches by ZIP code to counties, filters for likely-lottery-bound applications, and constructs a county-level win-rate.
-3. H-1B_Data.qmd
+3. H-1B_Data.Qmd:  
    Merges CBP and H-1B lottery datasets, calculates Herfindahl-Hirschman and Shannon Diversity indices and estimates regression models using "fixest."
 
 ### Input Files
 
 - **`CBP files`**  
   All CBP files from 2012–2022. Make sure to place it under Datasets\Tables  
-  [Download from Google Drive](#)
+  [Download from Google Drive](https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 - **`H-1B Employer Data Hub (2016)`**  
   The 2016 USCIS H-1B Data Hub file  
 
 - **`H-1B_Disclosure_Data_FY16.xlsx`**  
   LCA data for the 2016 H-1B lottery. Make sure to place it under Datasets\H-1B Data  
-  [Download from Google Drive](#)
+  [Download from Google Drive](https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 
 ## Output Files
 
 - **`cbp_2012_2022.csv`**  
   Cleaned County Business Patterns dataset. This goes in the main folder.  
-  [Download from Google Drive](#)
+  [Download from Google Drive](https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 - **`Lottery_Applications_vs_Approvals.csv`**  
   Merged county-level H-1B lottery data (USCIS + LCA)  
@@ -70,7 +69,7 @@ install.packages(c(
 
 - **`ProsemData.csv`**  
   Larger dataset used to analyze heterogeneity. This goes in the main folder.  
-  [Download from Google Drive](#)
+  [Download from Google Drive](https://drive.google.com/drive/folders/18FqGTgWY_HrpHcq-7cpehWTBj9khGm6x?usp=sharing)
 
 
 ## Author
