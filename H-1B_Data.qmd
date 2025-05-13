@@ -123,6 +123,7 @@ H1bdf <- H1bdf %>%
   select(-state_fips)
 
 library(haven)
+#write.csv(H1bdf, "h1bdf.csv")
 #write_dta("H1bdf.dta", data = H1bdf)
 
 ```
@@ -305,6 +306,8 @@ H1bdf <- H1bdf %>%
 event_study_hhi <- feols(log_hhi ~ i(event_time, win_rate, ref = -1) + factor(COUNTY) + factor(YEAR), data = H1bdf, cluster = "COUNTY")
 
 event_study_shannon <- feols(log_shannon ~ i(event_time, win_rate, ref = -1) + factor(COUNTY) + factor(YEAR), data = H1bdf, cluster = "COUNTY")
+
+wald(event_study_hhi, "event_time::[-5,-4,-3,-2, -1]")
 
 summary(event_study_hhi)
 summary(event_study_shannon)
