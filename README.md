@@ -1,4 +1,5 @@
 # Replication Code for Ma, Spencer. 2025. Skilled Immigration and Business Diversity: Evidence From the H-1B Lottery
+[Link to Paper](https://link.springer.com/article/10.1007/s11293-025-09841-3)
 
 This project provides the replication code and most of the datasets for **Ma, Spencer. 2025. Skilled Immigration and Business Diversity: Evidence from the H-1B Lottery.
 
@@ -78,4 +79,4 @@ The George Washington University
 Email: spencerma@gwmail.gwu.edu
 
 ## License
-This repository is for academic purposes only. If you want to use any of this project, please cite the thesis or contact the author for permission.
+This repository is for academic purposes only. If you want to use any of this project, please cite the paper or contact the author for permission.
