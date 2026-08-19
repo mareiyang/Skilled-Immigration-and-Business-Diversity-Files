@@ -62,7 +62,7 @@ duplicates <-check_panel(ProsemData_Raw)
 ProsemData <- ProsemData_Raw |>
   group_by(GEO_ID, YEAR, NAICS) |>
   summarise(
-    across(c(NAME, ESTAB, COUNTY, initial_approval, num_petitions, win_rate, h1b_activity), first),  # keep first occurrence
+    across(c(NAME, COUNTY, initial_approval, num_petitions, win_rate, h1b_activity), first),  # keep first occurrence
     ESTAB = sum(ESTAB, na.rm = TRUE),
     .groups = "drop"
   )
@@ -123,9 +123,20 @@ H1bdf <- H1bdf %>%
   select(-state_fips)
 
 library(haven)
-#write.csv(H1bdf, "h1bdf.csv")
+#write.csv(H1bdf, "h1bdf.csv", row.names = FALSE)
 #write_dta("H1bdf.dta", data = H1bdf)
 
+```
+
+### Extra last minute adding time lags
+
+```{r}
+H1bdf <- H1bdf |>
+  group_by(COUNTY) |>
+  arrange(YEAR) |>
+  mutate(hhi_lagy1 = lag(hhi, 1)) |>
+  mutate(hhi_lagy2 = lag(hhi, 2)) |>
+  ungroup()
 ```
 
 ```{r}
@@ -192,18 +203,26 @@ diversityrank_full <- CBP_diversity |>
 ```{r}
 library(ggplot2)
 
-ggplot(H1bdf, aes(x = shannon_index)) +
+shannon_dist <- ggplot(H1bdf, aes(x = shannon_index)) +
   geom_histogram(bins = 30, fill = "skyblue", color = "black") +
   labs(title = "Distribution of Shannon Diversity Index", x = "Shannon Index", y = "Frequency")
 
-ggplot(H1bdf, aes(x = hhi)) +
+hhi_dist <- ggplot(H1bdf, aes(x = hhi)) +
   geom_histogram(bins = 30, fill = "salmon", color = "black") +
   labs(title = "Distribution of HHI", x = "HHI", y = "Count")
 
-ggplot(H1bdf, aes(x = win_rate)) +
+winrate_dist <- ggplot(H1bdf, aes(x = win_rate)) +
   geom_histogram(bins = 30, fill = "lightgreen", color = "black") +
-  labs(title = "Distribution of H-1B Visa Win Rate", x = "Win Rate", y = "Count") +
+  labs(x = "Win Rate", y = "Count") +
   theme_classic()
+
+shannon_dist
+hhi_dist
+winrate_dist
+
+ggsave("Figures/shannon_distribution.pdf", shannon_dist, width = 7, height = 5)
+ggsave("Figures/hhi_distribution.pdf", hhi_dist, width = 7, height = 5)
+ggsave("Figures/winrate_distribution.pdf", winrate_dist, width = 7, height = 5)
 
 ```
 
@@ -227,13 +246,19 @@ Before doing anything, I'm gonna log my diversity measures because the interpret
 ### New Visualizations
 
 ```{r}
-ggplot(H1bdf, aes(x = log_shannon)) +
+log_shannon_dist <- ggplot(H1bdf, aes(x = log_shannon)) +
   geom_histogram(bins = 30, fill = "blue", color = "black") +
   labs(title = "Distribution of log(Shannon Index)")
 
-ggplot(H1bdf, aes(x = log_hhi)) +
+log_hhi_dist <- ggplot(H1bdf, aes(x = log_hhi)) +
   geom_histogram(bins = 30, fill = "red", color = "black") +
   labs(title = "Distribution of log(HHI)")
+
+log_shannon_dist
+log_hhi_dist
+
+ggsave("Figures/log_shannon_distribution.pdf", log_shannon_dist, width = 7, height = 5)
+ggsave("Figures/log_hhi_distribution.pdf", log_hhi_dist, width = 7, height = 5)
 ```
 
 ### Preliminary Regressions
@@ -312,10 +337,26 @@ wald(event_study_hhi, "event_time::[-5,-4,-3,-2, -1]")
 summary(event_study_hhi)
 summary(event_study_shannon)
 
-iplot(event_study_shannon,
-      main = "Event Study: Effect of H-1B Lottery Win Rate Over Time",
-      xlab = "Years Relative to Event",
-      ylab = "Effect of Win Rate on Log(HHI)")
+# iplot() draws on the base graphics device, so wrap it to draw it twice:
+# once for the knitted output and once into the PDF written for the paper.
+plot_event_study_hhi <- function() {
+  # main = "" rather than dropping the argument: iplot's default title is
+  # "Effect on log_hhi", so omitting it leaves a title rather than removing one.
+  # Shrinking the top margin reclaims the band the title used to occupy.
+  op <- par(mar = c(4.5, 4.5, 1, 1))
+  on.exit(par(op))
+
+  iplot(event_study_hhi,
+        main = "",
+        xlab = "Years Relative to Event",
+        ylab = "Effect of Win Rate on Log(HHI)")
+}
+
+plot_event_study_hhi()
+
+pdf("Figures/event_study_hhi.pdf", width = 7, height = 5)
+plot_event_study_hhi()
+dev.off()
 ```
 
 ## Event Study Business Counts
@@ -325,11 +366,26 @@ event_study_counts <- feols(log_estab ~ i(event_time, win_rate, ref = -1) | COUN
 
 summary(event_study_counts)
 
-iplot(event_study_counts,
-      main = "Event Study: Effect of H-1B Win Rate on Business Counts",
-      xlab = "Years Relative to Event",
-      ylab = "Effect of Win Rate on Log(Counts)",
-      ci = 0.9)
+wald(event_study_counts, "event_time::[-5,-4,-3,-2, -1]")
+
+plot_event_study_counts <- function() {
+  # NB: `ci` is not an iplot argument - it lands in `...` and fixest reads it as
+  # a second model, which errors. The confidence level is `ci_level`; the
+  # default 0.95 is what the paper's caption describes.
+  op <- par(mar = c(4.5, 4.5, 1, 1))
+  on.exit(par(op))
+
+  iplot(event_study_counts,
+        main = "",
+        xlab = "Years Relative to Event",
+        ylab = "Effect of Win Rate on Log(Counts)")
+}
+
+plot_event_study_counts()
+
+pdf("Figures/event_study_counts.pdf", width = 7, height = 5)
+plot_event_study_counts()
+dev.off()
 ```
 
 Parallel trends assumption holds because pre-treatment coefficients are all near-zero and statistically insignificant. Post-treatment effects show a causal impact of an H-1B visa increasing business diversity.
@@ -349,6 +405,138 @@ summary(did_continuous_hhi)
 The P value is near 0 using, meaning that this coefficient is highly significant. This means that a 1 percentage point increase in H-1B win rate is associated with a 0.063% decline in the HHI index. Or, an increase in H-1B win rates increases business diversity.
 
 Standard Error Treament used was Driscoll-Kraay, which is robust to spatial and temporal dependence.
+
+## Sensitivity: Cap-Exempt Filter Breadth
+
+How much of the result depends on where the cap-exempt line is drawn. The three specs are built in `H-1B_Data_Cleaning.Rmd`: no exclusion at all, the published keyword list, and a deliberately over-inclusive list. Only the *dose* changes across specs — the HHI outcome is built from a county's own NAICS establishment shares and never touches the filter — so the county-year panel is built once and the dose swapped in.
+
+```{r}
+library(fixest)
+library(broom)
+
+specs <- c("none", "baseline", "broad")
+
+# colClasses is not optional here. COUNTY is a zero-padded FIPS string, and
+# read.csv would turn "01001" into the integer 1001, silently failing to merge
+# every leading-zero county. The existing read at the top of this file survives
+# only because a stray "Unknown" value forces the column to character -- if that
+# value ever disappears the join breaks with no error, just missing counties.
+dose_raw <- read.csv("Lottery_Applications_vs_Approvals.csv",
+                     colClasses = c(COUNTY = "character"))
+
+# Outcome panel: independent of the cap-exempt filter, so built once.
+cbp_panel <- CBP_data |>
+  mutate(COUNTY = substr(GEO_ID, 10, 14)) |>
+  distinct() |>
+  group_by(GEO_ID, YEAR, NAICS) |>
+  summarise(across(c(NAME, COUNTY), first),
+            ESTAB = sum(ESTAB, na.rm = TRUE), .groups = "drop") |>
+  group_by(COUNTY, NAME, YEAR) |>
+  group_modify(~ calculate_indices(.x)) |>
+  ungroup() |>
+  mutate(log_hhi = log(hhi),
+         log_shannon = log(shannon_index),
+         log_estab = log(ESTAB))
+```
+
+```{r}
+# inner_join makes explicit what the main pipeline does by accident: counties with
+# no H-1B activity have NA petitions, and `NA >= 20` is NA, so they are dropped by
+# the threshold rather than by any deliberate decision.
+build_panel <- function(spec, min_petitions = 20, keep_counties = NULL) {
+  dose <- dose_raw |>
+    transmute(
+      COUNTY,
+      initial_approval = .data[[paste0("initial_approval_", spec)]],
+      num_petitions    = .data[[paste0("num_petitions_", spec)]]
+    ) |>
+    filter(!is.na(num_petitions), num_petitions >= min_petitions) |>
+    mutate(win_rate = pmin(initial_approval / num_petitions, 1))
+
+  if (!is.null(keep_counties)) dose <- filter(dose, COUNTY %in% keep_counties)
+
+  cbp_panel |>
+    inner_join(dose, by = "COUNTY") |>
+    mutate(Post = as.integer(YEAR >= 2017),
+           event_time = pmin(pmax(YEAR - 2017, -5), 5))
+}
+
+# Each spec admits a different set of counties (a broader filter shrinks the
+# denominator and pushes counties under the 20-petition floor). Reporting both the
+# spec's own sample and the sample common to all three separates "the dose changed"
+# from "the sample changed".
+common_counties <- Reduce(intersect, lapply(specs, function(s) unique(build_panel(s)$COUNTY)))
+length(common_counties)
+```
+
+```{r}
+run_one <- function(spec, sample_label, keep_counties = NULL) {
+  d <- build_panel(spec, keep_counties = keep_counties)
+  m <- feols(log_hhi ~ win_rate * Post | COUNTY + YEAR, data = d, cluster = "COUNTY")
+  tt <- tidy(m) |> filter(term == "win_rate:Post")
+
+  tibble(
+    spec          = spec,
+    sample        = sample_label,
+    counties      = n_distinct(d$COUNTY),
+    med_petitions = median(d$num_petitions),
+    mean_win_rate = mean(d$win_rate),
+    estimate      = tt$estimate,
+    std.error     = tt$std.error,
+    p.value       = tt$p.value
+  )
+}
+
+sens_table <- bind_rows(
+  lapply(specs, run_one, sample_label = "own"),
+  lapply(specs, run_one, sample_label = "common", keep_counties = common_counties)
+)
+
+sens_table
+
+# The baseline spec must reproduce the published estimate exactly; if it does not,
+# the refactor above has drifted from the main pipeline and nothing else here is
+# trustworthy.
+all.equal(
+  sens_table$estimate[sens_table$spec == "baseline" & sens_table$sample == "own"],
+  unname(coef(did_continuous_hhi)["win_rate:Post"]),
+  tolerance = 1e-8
+)
+```
+
+```{r}
+# Event study under each spec, overlaid. ggplot rather than iplot() because three
+# base-graphics event studies cannot be drawn on one set of axes.
+es_tidy <- bind_rows(lapply(specs, function(s) {
+  m <- feols(log_hhi ~ i(event_time, win_rate, ref = -1) | COUNTY + YEAR,
+             data = build_panel(s), cluster = "COUNTY")
+  tidy(m, conf.int = TRUE) |>
+    filter(grepl("^event_time::", term)) |>
+    mutate(event_time = as.numeric(sub("^event_time::(-?[0-9]+):win_rate$", "\\1", term)),
+           spec = s)
+}))
+
+# Reinstate the omitted reference period so the plotted path is not misread.
+es_tidy <- bind_rows(
+  es_tidy,
+  tibble(event_time = -1, estimate = 0, conf.low = 0, conf.high = 0, spec = specs)
+)
+
+es_plot <- ggplot(es_tidy, aes(event_time, estimate, colour = spec, shape = spec)) +
+  geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.3) +
+  geom_vline(xintercept = -0.5, linetype = "dotted", linewidth = 0.3) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high),
+                  position = position_dodge(width = 0.45)) +
+  scale_x_continuous(breaks = -5:5) +
+  labs(x = "Years Relative to Event",
+       y = "Effect of Win Rate on Log(HHI)",
+       colour = "Cap-exempt filter", shape = "Cap-exempt filter") +
+  theme_minimal()
+
+es_plot
+
+ggsave("Figures/sensitivity_cap_exempt.pdf", es_plot, width = 7, height = 5)
+```
 
 ## Heterogeneity
 
@@ -409,11 +597,54 @@ HighSkill <- ImmigrantHeavy[skill_group == "High"]
 ```
 
 ```{r}
-feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = ImmigrantHeavy, cluster = "COUNTY")
+did_immigrant <- feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = ImmigrantHeavy, cluster = "COUNTY")
 
-feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = HighSkill, cluster = "COUNTY")
+did_skilled <- feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = HighSkill, cluster = "COUNTY")
 
-feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = LowSkill, cluster = "COUNTY")
+did_unskilled <- feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = LowSkill, cluster = "COUNTY")
+
+summary(did_immigrant)
+summary(did_skilled)
+summary(did_unskilled)
+```
+
+```{r}
+library(broom)
+
+# Extract coefficient and SE from each model
+immigrant_coef <- tidy(did_immigrant) |> filter(term == "win_rate:Post")
+highskill_coef <- tidy(did_skilled) |> filter(term == "win_rate:Post")
+lowskill_coef <- tidy(did_unskilled) |> filter(term == "win_rate:Post")
+
+# Combine into a single dataframe
+heterogeneity_df <- rbind(
+  data.frame(Group = "Immigrant-heavy",
+             Estimate = immigrant_coef$estimate,
+             SE = immigrant_coef$std.error),
+  data.frame(Group = "High-skill",
+             Estimate = highskill_coef$estimate,
+             SE = highskill_coef$std.error),
+  data.frame(Group = "Low-skill",
+             Estimate = lowskill_coef$estimate,
+             SE = lowskill_coef$std.error)
+)
+```
+
+#### Heterogeneity Visualization
+
+```{r}
+library(ggplot2)
+
+ggplot(heterogeneity_df, aes(x = Group, y = Estimate)) +
+  geom_col(fill = "steelblue") +
+  geom_errorbar(aes(ymin = Estimate - SE, ymax = Estimate + SE),
+                width = 0.2, color = "black") +
+  geom_text(aes(label = sprintf("%.3f", Estimate)),
+            vjust = -0.5, size = 4) +
+  labs(title = "H-1B Lottery Effects Heterogeneity",
+       y = "Effect on log(Business Counts)",
+       x = "") +
+  theme_classic()
 ```
 
 ## Robustness Checks
@@ -422,7 +653,7 @@ feols(log(ESTAB) ~ win_rate * Post | COUNTY + YEAR + NAICS, data = LowSkill, clu
 
 ```{r}
 H1bdf <- H1bdf %>%
-  mutate(Post_Placebo = ifelse(YEAR >= 2016, 1, 0))
+  mutate(Post_Placebo = ifelse(YEAR >= 2014, 1, 0))
 
 placebo_model <- feols(log_hhi ~ win_rate * Post_Placebo + i(COUNTY) + i(YEAR), data = H1bdf, cluster = "COUNTY")
 
@@ -446,6 +677,304 @@ print(percent_sd_hhi)
 print(percent_sd)
 ```
 
+### NAICS Exclusion
+
+```{r}
+ProsemData <- ProsemData |>
+  mutate(
+    NAICS2 = substr(NAICS, 1, 2)
+  )
+
+# Define sets of 2-digit NAICS codes
+local_services <- c("44","45","62","71","72","81")
+tradables <- c("31","32","33","42","51","52","54")
+
+ProsemData_Local <- ProsemData |>
+  filter(NAICS2 %in% local_services)
+
+ProsemData_Spillover <- ProsemData |>
+  filter(NAICS2 %in% tradables)
+
+H1bdf_local <- ProsemData_Local |>
+  group_by(COUNTY, NAME, YEAR, win_rate) |>
+  group_modify(~ calculate_indices(.x)) |>
+  ungroup()
+
+H1bdf_spillover <- ProsemData_Spillover |>
+  group_by(COUNTY, NAME, YEAR, win_rate) |>
+  group_modify(~calculate_indices(.x)) |>
+  ungroup()
+
+H1bdf_local <- H1bdf_local |>
+  mutate(Post = ifelse(YEAR >= 2017, 1, 0))
+
+H1bdf_spillover <- H1bdf_spillover |>
+  mutate(Post = ifelse(YEAR >= 2017, 1, 0))
+```
+
+```{r}
+feols(log(hhi) ~ win_rate*Post | COUNTY + YEAR, data = H1bdf_local, cluster = "COUNTY")
+
+feols(log(hhi)~ win_rate*Post | COUNTY + YEAR, data = H1bdf_spillover, cluster = "COUNTY")
+```
+
+### DiD with Lags
+
+```{r}
+feols(log(hhi) ~ win_rate*Post + log(hhi_lagy1) + log(hhi_lagy2) | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+
+```
+
+
+```{r}
+library(broom)
+
+# Example: store your models
+m1 <- feols(log(hhi) ~ win_rate*Post | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
+m2 <- feols(log(hhi) ~ win_rate*Post + log(hhi_lagy1) + log(hhi_lagy2) | COUNTY + YEAR,
+            data = H1bdf, cluster = "COUNTY")
+
+# Extract tidy results with confidence intervals
+tidy_m1 <- broom::tidy(m1, conf.int = TRUE) %>%
+  mutate(model = "No Lags")
+tidy_m2 <- broom::tidy(m2, conf.int = TRUE) %>%
+  mutate(model = "With Lags")
+
+# Combine
+tidy_all <- bind_rows(tidy_m1, tidy_m2) %>%
+  filter(term %in% c("win_rate:Post", "log(hhi_lagy1)", "log(hhi_lagy2)"))
+
+# Clean labels
+tidy_all$term <- recode(tidy_all$term,
+                        "win_rate:Post" = "Win Rate × Post",
+                        "log(hhi_lagy1)" = "Log HHI (t-1)",
+                        "log(hhi_lagy2)" = "Log HHI (t-2)")
+
+# Plot
+ggplot(tidy_all, aes(x = term, y = estimate, color = model)) +
+  geom_point(position = position_dodge(width = 0.6), size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high),
+                position = position_dodge(width = 0.6), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "", 
+       y = "Coefficient Estimate (95% CI)",
+       title = "Effect of H-1B Wins and Lagged HHI on HHI") +
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "bottom")
+```
+
+### Callaway Sant'anna Continuous DiD
+
+The full Callaway, Goodman-Bacon and Sant'Anna (2024) estimator in the `contdid`
+package is *not* identified in this setting. `cont_did()` compares dose-$d$ units
+against untreated (dose-0) units, and every county here has `win_rate > 0` (the
+minimum is 0.00285). There is no zero-dose group to recover: with the 20-petition
+threshold and win rates centred near 0.32, the chance a county draws zero wins is
+about $0.68^{20} \approx 0.04\%$, so a genuine zero would almost certainly be a
+failed employer-name merge rather than lottery luck. Bringing in the ~1,450
+never-applying counties as controls would trade the lottery randomisation for
+conditional parallel trends, which is a worse design than the one we have.
+
+What their critique *does* apply to is the linearity of `win_rate * Post`: with a
+continuous dose, that single coefficient is a weighted average of causal responses
+across the dose distribution. Binning the dose tests that directly, using only
+variation inside the lottery-applicant sample.
+
+```{r}
+# Bin on the COUNTY-level distribution, not the observation-level one: win_rate is
+# time-invariant, so cutting the full panel would just weight each county by its
+# number of years.
+dose_bins <- H1bdf |>
+  filter(!is.na(win_rate)) |>
+  distinct(COUNTY, win_rate)
+
+dose_breaks <- quantile(dose_bins$win_rate, probs = seq(0, 1, 0.25), na.rm = TRUE)
+
+dose_bins <- dose_bins |>
+  mutate(dose_q = cut(win_rate, breaks = dose_breaks,
+                      include.lowest = TRUE, labels = 1:4))
+
+H1bdf_dose <- H1bdf |>
+  filter(!is.na(win_rate)) |>
+  left_join(dose_bins |> select(COUNTY, dose_q), by = "COUNTY")
+
+# Mean dose per bin, needed to map coefficients back onto win rates
+dose_summary <- dose_bins |>
+  group_by(dose_q) |>
+  summarise(counties = n(),
+            min_dose = min(win_rate),
+            mean_dose = mean(win_rate),
+            max_dose = max(win_rate),
+            .groups = "drop")
+
+dose_summary
+```
+
+County fixed effects absorb `win_rate` (time-invariant) and year fixed effects
+absorb `Post`, so the interactions are all that is identified. Coefficients are
+therefore the post-2016 shift for each quartile *relative to quartile 1*, not an
+absolute effect.
+
+```{r}
+dose_hhi <- feols(log_hhi ~ i(dose_q, Post, ref = 1) | COUNTY + YEAR,
+                  data = H1bdf_dose, cluster = ~COUNTY)
+
+dose_shannon <- feols(log_shannon ~ i(dose_q, Post, ref = 1) | COUNTY + YEAR,
+                      data = H1bdf_dose, cluster = ~COUNTY)
+
+# Linear specification for comparison
+dose_linear <- feols(log_hhi ~ win_rate:Post | COUNTY + YEAR,
+                     data = H1bdf_dose, cluster = ~COUNTY)
+
+
+etable(dose_hhi, dose_shannon, dose_linear)
+```
+
+If the response were linear, the top quartile (mean dose 0.691) should show roughly
+twice the effect of the third (mean dose 0.383). The test below reports whether it
+does.
+
+```{r}
+b <- coef(dose_hhi)
+V <- vcov(dose_hhi)
+i3 <- "dose_q::3:Post"
+i4 <- "dose_q::4:Post"
+
+diff_34 <- b[i3] - b[i4]
+se_34   <- sqrt(V[i3, i3] + V[i4, i4] - 2 * V[i3, i4])
+
+data.frame(
+  q3 = b[i3], q4 = b[i4],
+  difference = diff_34, std_error = se_34,
+  t_stat = diff_34 / se_34,
+  p_value = 2 * pnorm(-abs(diff_34 / se_34)),
+  row.names = NULL
+)
+```
+
+Pre-trends, interacting event time with the dose bins. `ref2 = 1` is required:
+without it the full set of `event_time` x `dose_q` dummies sums to the year
+dummies and is collinear with the year fixed effects, so `fixest` silently drops
+one entire quartile's path (all ten Q4 terms). Setting Q1 as the reference bin
+makes the normalisation explicit and matches the levels regression above -- each
+series is that quartile's path *relative to Q1*.
+
+```{r}
+dose_es <- feols(log_hhi ~ i(event_time, dose_q, ref = -1, ref2 = 1) | COUNTY + YEAR,
+                 data = H1bdf_dose, cluster = ~COUNTY)
+
+es_coef <- coef(dose_es)
+es_se   <- se(dose_es)
+pre_terms <- grep("^event_time::-", names(es_coef), value = TRUE)
+
+cat("Pre-period interactions significant at 5%:",
+    sum(abs(es_coef[pre_terms] / es_se[pre_terms]) > 1.96),
+    "of", length(pre_terms), "\n")
+
+length(dose_es$collin.var)  # 0 once ref2 is set
+```
+
+`iplot()` cannot draw the model above: it only handles variables built by
+`i(factor, numeric)` or `i(factor)`, and `i(event_time, dose_q)` is a
+factor-by-factor interaction, which raises "no variable created with i() found".
+Collapsing the dose to a binary high/low split gives `iplot()` something it can
+plot, at the cost of the quartile detail.
+
+```{r}
+H1bdf_dose <- H1bdf_dose |>
+  mutate(high_dose = as.integer(dose_q %in% c("3", "4")))
+
+dose_es_binary <- feols(log_hhi ~ i(event_time, high_dose, ref = -1) | COUNTY + YEAR,
+                        data = H1bdf_dose, cluster = ~COUNTY)
+
+# Same wrapper pattern as the other iplot()s in this file: base graphics, so draw
+# once for the knitted output and once into the PDF written for the paper.
+plot_dose_es <- function() {
+  op <- par(mar = c(4.5, 4.5, 1, 1))
+  on.exit(par(op))
+
+  iplot(dose_es_binary,
+        main = "",
+        xlab = "Years Relative to the 2016 Lottery",
+        ylab = "Effect on Log(HHI), Top Two Quartiles vs Bottom Two")
+  abline(v = -0.5, lty = 3, col = "grey50")
+}
+
+plot_dose_es()
+
+pdf("Figures/dose_event_study.pdf", width = 7, height = 5)
+plot_dose_es()
+dev.off()
+```
+
+The four-bin version has to be drawn by hand. Each series is one quartile's path
+relative to Q1, so Q1 itself is the flat zero line by construction.
+
+```{r}
+dose_es_df <- data.frame(
+  term = names(es_coef),
+  estimate = as.numeric(es_coef),
+  std_error = as.numeric(es_se)
+) |>
+  mutate(
+    event_time = as.integer(sub("^event_time::(-?[0-9]+):.*$", "\\1", term)),
+    dose_q = sub("^.*dose_q::([0-9]+)$", "\\1", term),
+    ci_low = estimate - 1.96 * std_error,
+    ci_high = estimate + 1.96 * std_error
+  ) |>
+  bind_rows(
+    expand.grid(event_time = sort(unique(H1bdf_dose$event_time)),
+                dose_q = "1") |>
+      mutate(estimate = 0, std_error = 0, ci_low = 0, ci_high = 0)
+  )
+
+dose_es_plot <- ggplot(dose_es_df, aes(x = event_time, y = estimate, colour = dose_q)) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_vline(xintercept = -0.5, linetype = "dotted", colour = "grey50") +
+  geom_ribbon(aes(ymin = ci_low, ymax = ci_high, fill = dose_q),
+              alpha = 0.12, colour = NA) +
+  geom_line() +
+  geom_point(size = 1.4) +
+  labs(x = "Years Relative to the 2016 Lottery",
+       y = "Effect on log(HHI) relative to quartile 1",
+       colour = "Dose quartile", fill = "Dose quartile") +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "bottom")
+
+dose_es_plot
+
+ggsave("Figures/dose_event_study_quartiles.pdf", dose_es_plot, width = 7, height = 5)
+```
+
+```{r}
+# Dose-response plot: coefficients against mean dose, with quartile 1 as the
+# normalised zero.
+dose_plot_df <- data.frame(
+  dose_q = factor(2:4),
+  estimate = coef(dose_hhi),
+  std_error = se(dose_hhi)
+) |>
+  left_join(dose_summary |> select(dose_q, mean_dose), by = "dose_q") |>
+  bind_rows(data.frame(dose_q = factor(1), estimate = 0, std_error = 0,
+                       mean_dose = dose_summary$mean_dose[1])) |>
+  arrange(mean_dose) |>
+  mutate(ci_low = estimate - 1.96 * std_error,
+         ci_high = estimate + 1.96 * std_error)
+
+dose_response <- ggplot(dose_plot_df, aes(x = mean_dose, y = estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.015) +
+  geom_point(size = 2) +
+  geom_line() +
+  labs(x = "Mean H-1B lottery win rate in quartile",
+       y = "Effect on log(HHI) relative to quartile 1") +
+  theme_classic(base_size = 12)
+
+dose_response
+
+ggsave("Figures/dose_response_hhi.pdf", dose_response, width = 7, height = 5)
+```
+
 ## DiD Using Driscoll-Kray Standard Errors
 
 ### Original DiD using HHI
@@ -457,10 +986,21 @@ event_studydk <- feols(log_hhi ~ i(event_time, win_rate, ref = -1) + factor(COUN
 
 summary(did_countyDK)
 
-iplot(event_studydk,
-      main = "Event Study: Effect of H-1B Win Rate on Business Counts",
-      xlab = "Years Relative to Event",
-      ylab = "Effect of Win Rate on Log(Counts)")
+plot_event_study_dk <- function() {
+  op <- par(mar = c(4.5, 4.5, 1, 1))
+  on.exit(par(op))
+
+  iplot(event_studydk,
+        main = "",
+        xlab = "Years Relative to Event",
+        ylab = "Effect of Win Rate on Log(Counts)")
+}
+
+plot_event_study_dk()
+
+pdf("Figures/event_study_dk.pdf", width = 7, height = 5)
+plot_event_study_dk()
+dev.off()
 ```
 
 ### Placebo DiD using HHI
@@ -482,7 +1022,7 @@ summary(did_continuous_shannon)
 ```
 
 ```{r}
-placebo_model_shannon <- feols(log_shannon ~ win_rate * Post_Placebo + i(COUNTY) + i(YEAR), data = H1bdf, cluster = "COUNTY")
+placebo_model_shannon <- feols(log_shannon ~ win_rate * Post_Placebo | COUNTY + YEAR, data = H1bdf, cluster = "COUNTY")
 
 summary(placebo_model_shannon)
 ```
@@ -533,6 +1073,10 @@ upper <- quantile(map_data$shannon_index, 0.99, na.rm = TRUE)
 # Winsorize
 map_data <- map_data %>%
   mutate(residual_naics = pmin(pmax(log_shannon, lower), upper))
+
+# Percentile
+map_data <- map_data |>
+  mutate(HHI_pctile = percent_rank(hhi)*100)
 ```
 
 ```{r}
@@ -541,11 +1085,10 @@ library(viridis)
 # Reproject to a U.S.-focused CRS
 map_data <- st_transform(map_data, crs = 5070)  # USA Albers Equal-Area
 
-ggplot(map_data) +
-  geom_sf(aes(fill = shannon_index), color = "white", lwd = 0.05) +
-  scale_fill_viridis_c(option = "plasma", name = "NAICS Categories") +
-  labs(title = "Number of Unique NAICS Categories per County",
-       caption = "Source: CBP & Census Data") +
+hhi_map <- ggplot(map_data) +
+  geom_sf(aes(fill = HHI_pctile), color = "white", lwd = 0.05) +
+  scale_fill_viridis_c(option = "plasma", direction = -1, name = "HHI Percentile") +
+  labs(caption = "Source: CBP & Census Data") +
   theme_minimal() +
   theme(
     legend.position = c(0.9, 0.15),  # Moves legend inside map
@@ -557,6 +1100,10 @@ ggplot(map_data) +
     ylim = c(-70000, 3200000),  
     expand = FALSE
   )
+
+hhi_map
+
+ggsave("Figures/HHI_map.pdf", hhi_map, width = 12, height = 8, bg = "white")
 ```
 
 ```{r}
@@ -586,7 +1133,7 @@ df <- rbind(df, data.frame(
 df <- df[order(df$event_time), ]
 
 # Plot
-ggplot(df, aes(x = event_time, y = coeff)) +
+event_study_hhi_ribbon <- ggplot(df, aes(x = event_time, y = coeff)) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   geom_point(size = 2) +
   geom_line() +
@@ -595,6 +1142,10 @@ ggplot(df, aes(x = event_time, y = coeff)) +
        x = "Years Since Lottery (t)",
        y = "Effect of Win Rate on log(HHI)") +
   theme_minimal()
+
+event_study_hhi_ribbon
+
+ggsave("Figures/event_study_hhi_ribbon.pdf", event_study_hhi_ribbon, width = 7, height = 5)
 
 ```
 
@@ -607,7 +1158,7 @@ days_open <- c(365, 365, 322, 183, 131, 55, 2, 5, 264, 300, 235, 71, 5, 5, 5, 5,
 
 cap_filled <- data.frame(FiscalYear = years, DaysOpen = days_open)
 
-ggplot(cap_filled, aes(x = FiscalYear, y = DaysOpen)) +
+h1b_cap_days <- ggplot(cap_filled, aes(x = FiscalYear, y = DaysOpen)) +
   geom_line() +
   geom_point() +
   scale_x_continuous(breaks = seq(2002, 2020, by = 2)) +
@@ -617,6 +1168,10 @@ ggplot(cap_filled, aes(x = FiscalYear, y = DaysOpen)) +
     x = "Fiscal Year",
     y = "H-1B Cap-Subject Application Period\n(Days from Start of Filing to Final Receipt Date)"
   )
+
+h1b_cap_days
+
+ggsave("Figures/h1b_cap_days.pdf", h1b_cap_days, width = 7, height = 5)
 
 ```
 
@@ -654,7 +1209,7 @@ dk_event_study <- bind_rows(
   )
 
 # Plot
-ggplot(dk_event_study, aes(x = event_time, y = estimate)) +
+event_study_dk_ribbon <- ggplot(dk_event_study, aes(x = event_time, y = estimate)) +
   geom_line(color = "black") +
   geom_point(color = "black") +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.3, fill = "gray") +
@@ -665,6 +1220,10 @@ ggplot(dk_event_study, aes(x = event_time, y = estimate)) +
     y = "Effect of Win Rate on log(HHI)"
   ) +
   theme_minimal()
+
+event_study_dk_ribbon
+
+ggsave("Figures/event_study_dk_ribbon.pdf", event_study_dk_ribbon, width = 7, height = 5)
 
 
 ```

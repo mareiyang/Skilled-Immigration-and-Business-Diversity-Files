@@ -10,6 +10,11 @@ knitr::opts_chunk$set(echo = TRUE)
 options(scientific=T, digits = 7)
 knitr::opts_chunk$set(warning = FALSE, results = 'hide', message = F)
 library(here)
+
+# Pin the project root to this file's location rather than letting here() guess
+# from the session's working directory. Every Excel path below, and the Figures
+# export, depend on this resolving correctly.
+here::i_am("H-1B_Data_Cleaning.Rmd")
 ```
 
 # Data Cleaning H-1B Data
@@ -59,47 +64,96 @@ head(weekly_counts)
 
 ### Visualizing other years
 
-```
-file_path_2 <- here("Datasets", "H-1B Data",  "H-1B_Disclosure_Data_FY2019.xlsx")
+All eight appendix panels are built by the loop below. It handles one year at a
+time and never holds two disclosure files at once, which is the equivalent of
+Stata's `use ..., clear`. The mechanism is scope rather than an explicit command:
+everything `make_h1b_graph()` creates is local to that call and is released when
+it returns, so nothing accumulates across iterations.
 
+Three wrinkles this has to work around:
 
-H1B2012_Disclosure_Data <- as.data.table(read_excel(file_path_2, sheet = 1))
-```
+-   DOL renamed the submission-date column in FY2015. The 2012-2014 files call it
+    `LCA_CASE_SUBMIT`; 2015 onward call it `CASE_SUBMITTED`.
+-   The files are wide and slow to read (FY2019 has 260 columns), so
+    `read_submit_dates()` tells readxl to skip every column except the date. That
+    is what keeps this practical to run in one go.
+-   Reading is still the expensive step, so a year whose PDF already exists is
+    skipped. Delete the PDF to force a rebuild.
 
-```
-H1b2012Viz <- H1B2012_Disclosure_Data[CASE_SUBMITTED >= "2019-01-01" & CASE_SUBMITTED <= "2019-12-31"]
-
-# Create a 'week' column
-H1b2012Viz[, week := floor_date(CASE_SUBMITTED, unit = "week", week_start = 1)]
-
-# Count number of cases per week
-weekly_counts_2012 <- H1b2012Viz[, .N, by = week]
-
-# Convert week column to Date format
-weekly_counts_2012[, week := as.Date(week)]
-
-# Remove December Entry
-weekly_counts_2012 <- weekly_counts_2012 %>% filter(week != "2014-12-29")
-
-# View data structure
-head(weekly_counts_2012)
-```
-
-```
+```{r}
 library(ggplot2)
 
-ggplot(weekly_counts_2012, aes(x = week, y = N)) +
-  geom_line(color = "purple", size = 1) +
-  geom_point(size = 1) +
-  labs(title = "Weekly H-1B Cases Submitted in 2019",
-       x = "Week",
-       y = "Number of Cases Submitted") +
-  scale_y_continuous(breaks = seq(0, 55000, by = 5000)) +
-  scale_x_date(date_labels = "%b %d", date_breaks = "1 month") +
-  theme_minimal(base_size = 16)
+h1b_files <- c(
+  "2012" = "LCA_FY2012_Q4.xlsx",
+  "2013" = "LCA_FY2013.xlsx",
+  "2014" = "H-1B_FY14_Q4.xlsx",
+  "2015" = "H-1B_Disclosure_Data_FY15_Q4.xlsx",
+  "2016" = "H-1B_Disclosure_Data_FY16.xlsx",
+  "2017" = "H-1B_Disclosure_Data_FY17.xlsx",
+  "2018" = "H-1B_Disclosure_Data_FY2018_EOY.xlsx",
+  "2019" = "H-1B_Disclosure_Data_FY2019.xlsx"
+)
 
-ggsave("H-1B_graph_2019.png", width = 12, height = 8, dpi = 300, bg = "white")
+# Read the submission-date column and nothing else.
+read_submit_dates <- function(path) {
+  nms <- names(read_excel(path, sheet = 1, n_max = 0))
 
+  date_col <- intersect(c("CASE_SUBMITTED", "LCA_CASE_SUBMIT"), nms)[1]
+  if (is.na(date_col)) stop("No submission-date column in ", basename(path))
+
+  col_types <- rep("skip", length(nms))
+  col_types[which(nms == date_col)[1]] <- "date"
+
+  dt <- as.data.table(read_excel(path, sheet = 1, col_types = col_types))
+  setnames(dt, 1, "submitted")
+  dt[, submitted := as.Date(submitted)]
+  dt[]
+}
+
+# One year in, one PDF out. Nothing created in here outlives the call.
+make_h1b_graph <- function(year, file) {
+  submissions <- read_submit_dates(here("Datasets", "H-1B Data", file))
+
+  in_year <- submissions[submitted >= as.Date(paste0(year, "-01-01")) &
+                         submitted <= as.Date(paste0(year, "-12-31"))]
+
+  rm(submissions)  # drop the full-file table before doing anything else
+  gc()
+
+  in_year[, week := floor_date(submitted, unit = "week", week_start = 1)]
+  weekly_counts <- in_year[, .N, by = week][order(week)]
+
+  # Drop the partial leading week that starts in the previous December
+  weekly_counts <- weekly_counts[week >= as.Date(paste0(year, "-01-01"))]
+
+  weekly_plot <- ggplot(weekly_counts, aes(x = week, y = N)) +
+    geom_line(color = "purple", size = 1) +
+    geom_point(size = 1) +
+    labs(title = paste("Weekly H-1B Cases Submitted in", year),
+         x = "Week",
+         y = "Number of Cases Submitted") +
+    scale_y_continuous(breaks = seq(0, 55000, by = 5000)) +
+    scale_x_date(date_labels = "%b %d", date_breaks = "1 month") +
+    theme_minimal(base_size = 16)
+
+  ggsave(here("Figures", paste0("H-1B_graph_", year, ".pdf")),
+         weekly_plot, width = 12, height = 8, bg = "white")
+}
+
+# Loop variable is viz_year, not year: lubridate::year() is used further down
+# this file and a global named `year` is a trap worth not setting.
+for (viz_year in names(h1b_files)) {
+  out_file <- here("Figures", paste0("H-1B_graph_", viz_year, ".pdf"))
+
+  if (file.exists(out_file)) {
+    message("Skipping ", viz_year, ": ", basename(out_file), " already exists")
+    next
+  }
+
+  message("Building ", viz_year, " from ", h1b_files[[viz_year]])
+  make_h1b_graph(viz_year, h1b_files[[viz_year]])
+  gc()
+}
 ```
 
 # Cleaning the Disclosure Dataset
@@ -122,13 +176,52 @@ As described in Mahajan et. al, LCA cases submitted from March to April are more
 ## Removing Cap-Exempt Employers from Both Datasets
 
 ```{r}
-cap_exempt_keywords <- c("university", "univ", "college", "school", "research", "hospital", "medical center", "foundation", "institute", "government", "public health")
+# Three cap-exempt filters rather than one, so the downstream analysis can report
+# how sensitive the win rate is to where this line is drawn. The LCA data has no
+# cap-exempt flag, so any keyword rule is a guess; the point of "none" and "broad"
+# is to bracket that guess, not to be right.
+#
+#   none     - no exclusion at all. Upper bound on the denominator.
+#   baseline - the filter used in the published paper. Unchanged.
+#   broad    - deliberately over-inclusive. Catches genuine cap-exempt employers
+#              but also plain for-profits ("trust" hits SunTrust, "association"
+#              hits trade groups). Lower bound on the denominator, NOT an estimate.
+cap_exempt_specs <- list(
+  none = character(0),
 
-#Removing employers with cap-exempt keywords in the employer name from the LCA Dataset
-Likely_lottery <- Likely_lottery[!grepl(paste(cap_exempt_keywords, collapse = "|"), tolower(EMPLOYER_NAME))]
+  baseline = c("university", "univ", "college", "school", "research", "hospital",
+               "medical center", "foundation", "institute", "government",
+               "public health"),
 
-#Removing employers with cap-exempt keywords from the Employer Datahub Dataset
-Lottery_winners <- H1BFY2017_employer_data_hub[!grepl(paste(cap_exempt_keywords, collapse = "|"), tolower(`Employer (Petitioner) Name`))]
+  broad = c("university", "univ", "college", "school", "research", "hospital",
+            "medical center", "foundation", "institute", "government",
+            "public health", "medical", "health", "clinic", "academy",
+            "nonprofit", "non-profit", "charit", "trust", "museum", "library",
+            "seminary", "regents", "trustees", "board of ", "district",
+            "city of", "county of", "state of", "department of", "authority",
+            "center for", "society", "association", "institution", "laborator")
+)
+
+# Tag rather than drop. Every spec's totals are then a different weighted sum over
+# the same rows, so the pipeline runs once instead of three times -- which matters
+# because re-running it means re-reading the 75-270MB disclosure files.
+flag_keep <- function(employer_name, keywords) {
+  if (length(keywords) == 0) return(rep(TRUE, length(employer_name)))
+  !grepl(paste(keywords, collapse = "|"), tolower(employer_name))
+}
+
+Lottery_winners <- copy(H1BFY2017_employer_data_hub)
+
+for (spec in names(cap_exempt_specs)) {
+  kw <- cap_exempt_specs[[spec]]
+  Likely_lottery[,  (paste0("keep_", spec)) := flag_keep(EMPLOYER_NAME, kw)]
+  Lottery_winners[, (paste0("keep_", spec)) := flag_keep(`Employer (Petitioner) Name`, kw)]
+}
+
+# How much each spec removes, in employers (not yet in petitions).
+sapply(names(cap_exempt_specs), function(s)
+  c(LCA    = mean(!Likely_lottery[[paste0("keep_", s)]]),
+    USCIS  = mean(!Lottery_winners[[paste0("keep_", s)]])))
 ```
 
 I removed keywords pertaining to cap-exempt employers, including universities, research institutions, and nonprofits.
@@ -266,11 +359,15 @@ unique(unmatched_final$petitioner_zip_code)
 uscis_filtered <- uscis_with_county %>%
   filter(as.numeric(initial_approval) > 0)
 
-# Aggregate the dataset at the county level, summing only initial_approval
+# Aggregate the dataset at the county level, summing only initial_approval.
+# Multiplying by the logical keep_* flag zeroes out excluded employers, so the
+# three cap-exempt specs are three sums over one pass of the same rows.
 county_aggregated <- uscis_filtered %>%
   group_by(COUNTY) %>%
   summarise(
-    initial_approval = sum(as.numeric(initial_approval), na.rm = TRUE),
+    initial_approval_none     = sum(as.numeric(initial_approval) * keep_none,     na.rm = TRUE),
+    initial_approval_baseline = sum(as.numeric(initial_approval) * keep_baseline, na.rm = TRUE),
+    initial_approval_broad    = sum(as.numeric(initial_approval) * keep_broad,    na.rm = TRUE),
     RES_RATIO = mean(as.numeric(RES_RATIO), na.rm = TRUE),  # Taking mean since it's a ratio
     BUS_RATIO = mean(as.numeric(BUS_RATIO), na.rm = TRUE),
     OTH_RATIO = mean(as.numeric(OTH_RATIO), na.rm = TRUE),
@@ -280,7 +377,8 @@ county_aggregated <- uscis_filtered %>%
 # View the first few rows of the aggregated dataset
 head(county_aggregated)
 
-sum(as.numeric(county_aggregated$initial_approval, na.rm = TRUE))
+# National approval totals under each spec.
+colSums(county_aggregated[, grep("^initial_approval_", names(county_aggregated))])
 ```
 
 ## Aggregating LCA data at the county level
@@ -363,7 +461,12 @@ table(is.na(lca_with_county$COUNTY))
 county_aggregated_lca <- lca_with_county %>%
   filter(!is.na(COUNTY)) %>%  # Remove missing county entries
   group_by(COUNTY) %>%  
-  summarise(total_workers = sum(total_workers, na.rm = TRUE), .groups = "drop")  # Sum total workers per county
+  summarise(  # Sum total workers per county, once per cap-exempt spec
+    num_petitions_none     = sum(total_workers * keep_none,     na.rm = TRUE),
+    num_petitions_baseline = sum(total_workers * keep_baseline, na.rm = TRUE),
+    num_petitions_broad    = sum(total_workers * keep_broad,    na.rm = TRUE),
+    .groups = "drop"
+  )
 
 # View aggregated dataset
 head(county_aggregated_lca)
@@ -384,13 +487,17 @@ Lottery_Final <- Lottery_Final |>
 head(Lottery_Final)
 
 Lottery_Final <- Lottery_Final |>
-  mutate(
-    initial_approval = as.integer(initial_approval),
-    num_petitions = as.integer(total_workers)
-  )
+  mutate(across(c(starts_with("initial_approval_"), starts_with("num_petitions_")),
+                as.integer))
 
+# `initial_approval` and `num_petitions` are kept as aliases for the baseline spec
+# so H-1B_Data.qmd reproduces the published results with no change. The _none and
+# _broad columns are additive; the sensitivity section reads them by name.
 Lottery_Final <- Lottery_Final |>
-  select(-total_workers)
+  mutate(
+    initial_approval = initial_approval_baseline,
+    num_petitions    = num_petitions_baseline
+  )
 
 write.csv(Lottery_Final, "Lottery_Applications_vs_Approvals.csv", row.names = FALSE)
 ```

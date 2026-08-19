@@ -1,0 +1,48 @@
+# ---- R / RStudio ----
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.positai
+
+# ---- Raw datasets ----
+# These exceed GitHub's 100 MB per-file limit and are distributed via the
+# Google Drive links in README.md instead. Do not commit them.
+Datasets/CBP Data/Tables/
+Datasets/CBP Data/CBP Pre 2012/
+Datasets/H-1B Data/*.xlsx
+Datasets/H-1B Data/*.csv
+
+# Exploratory raw data for the planned multi-lottery extension. Not used by any
+# of the three pipeline notebooks, ~1 GB combined, and both are publicly
+# redistributable from their original sources (EFSY historical CBP; Census SUSB).
+Datasets/Historical CBP Data/
+Datasets/SUSB/
+
+# Stray ggplot device output
+Rplots.pdf
+
+# ---- Large derived intermediates ----
+# Regenerable by re-running the notebooks; too large for GitHub.
+cbp_2012_2022.csv
+ProsemData.csv
+
+# ---- Working paper (not public yet) ----
+Proseminar_Final_Paper/
+
+# ---- LaTeX build artifacts ----
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.fls
+*.fdb_latexmk
+
+# ---- Local agent notes ----
+# CLAUDE.md carries frank internal diagnostics (sample-construction caveats,
+# measurement-error findings, unfinished work). Kept local by default.
+CLAUDE.md
+.claude/

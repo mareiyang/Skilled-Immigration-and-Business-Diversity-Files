@@ -9,6 +9,12 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 options(scientific=T, digits = 7)
 library(here)  # for reproducible paths
+
+# Pin the project root to this file's location rather than letting here() guess
+# from the session's working directory. Without this, running chunks from the
+# wrong directory makes here() point elsewhere, list.files() quietly returns
+# nothing, and the failure only surfaces later as a missing-column error.
+here::i_am("CBP_Data_Cleaning.Rmd")
 ```
 
 # Data Cleaning CBP Data
@@ -273,7 +279,7 @@ library(viridis)
 # Reproject to a U.S.-focused CRS
 map_data <- st_transform(map_data, crs = 5070)  # USA Albers Equal-Area
 
-ggplot(map_data) +
+naics_map <- ggplot(map_data) +
   geom_sf(aes(fill = residual_naics), color = "white", lwd = 0.05) +
   scale_fill_viridis_c(
     option = "plasma", 
@@ -292,7 +298,8 @@ ggplot(map_data) +
     expand = FALSE
   )
 
+naics_map
 
-#ggsave("NAICS_map.png", width = 12, height = 8, dpi = 600, bg = "white")
+ggsave(here("Figures", "NAICS_map.pdf"), naics_map, width = 12, height = 8, bg = "white")
 
 ```
