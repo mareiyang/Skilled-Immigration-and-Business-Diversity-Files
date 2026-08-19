@@ -975,6 +975,288 @@ dose_response
 ggsave("Figures/dose_response_hhi.pdf", dose_response, width = 7, height = 5)
 ```
 
+### Robustness of the Dose-Response Shape
+
+The step between the second and third quartiles is either a real non-linearity or an
+artifact of how the dose is measured. Measured `win_rate` is a ratio, and its denominator
+shrinks as the measured dose rises: median petitions fall monotonically across quartiles,
+so the counties carrying the top of the dose distribution are exactly the ones whose win
+rate is estimated from the fewest draws. Classical measurement error in a right-hand-side
+variable attenuates a *linear* coefficient, but when the error is concentrated at one end
+of the support it distorts the estimated *shape*, which is what a bin specification
+reports.
+
+Two checks separate the explanations. Both reuse `build_panel()` from the cap-exempt
+sensitivity above, so the panel is rebuilt from source rather than filtered after the
+fact.
+
+```{r}
+# Counties censored at line 110: USCIS approvals exceed LCA petitions, so the raw
+# ratio is above 1. That is a merge failure, not lottery luck, and all of them sit
+# in the top dose quartile -- precisely where the shape is in question.
+censored_counties <- dose_raw |>
+  filter(!is.na(num_petitions), num_petitions >= 20,
+         initial_approval / num_petitions > 1) |>
+  pull(COUNTY)
+
+# build_panel() only checks num_petitions, so two counties with petitions recorded
+# but no approval figure survive it carrying win_rate = NA. Left alone they show up
+# as a silent <NA> bin in the composition table and as a "22 observations removed"
+# note in every regression below. Dropped explicitly instead.
+bp <- function(...) build_panel(...) |> filter(!is.na(win_rate))
+
+panel_base <- bp("baseline")
+uncensored <- setdiff(unique(panel_base$COUNTY), censored_counties)
+
+c(censored = length(censored_counties),
+  dropped_na_win_rate = n_distinct(build_panel("baseline")$COUNTY) -
+                        n_distinct(panel_base$COUNTY))
+```
+
+```{r}
+# Re-cutting the quartiles inside each subsample asks "is the shape still there";
+# holding the baseline edges fixed asks "did these same counties move". They answer
+# different questions, so both are reported.
+run_dose_bins <- function(d, label, breaks = NULL) {
+  cty <- d |> distinct(COUNTY, win_rate)
+
+  if (is.null(breaks)) {
+    breaks <- quantile(cty$win_rate, probs = seq(0, 1, 0.25), na.rm = TRUE)
+  }
+
+  cty <- cty |>
+    mutate(dose_q = cut(win_rate, breaks = breaks,
+                        include.lowest = TRUE, labels = 1:4))
+
+  dd <- d |>
+    left_join(cty |> select(COUNTY, dose_q), by = "COUNTY") |>
+    filter(!is.na(dose_q))
+
+  m <- feols(log_hhi ~ i(dose_q, Post, ref = 1) | COUNTY + YEAR,
+             data = dd, cluster = ~COUNTY)
+
+  b <- coef(m); V <- vcov(m); s <- se(m)
+  i3 <- "dose_q::3:Post"; i4 <- "dose_q::4:Post"
+  diff34 <- b[i3] - b[i4]
+  se34   <- sqrt(V[i3, i3] + V[i4, i4] - 2 * V[i3, i4])
+
+  tibble(
+    sample      = label,
+    counties    = n_distinct(dd$COUNTY),
+    q2          = b["dose_q::2:Post"],
+    q3          = b[i3], q3_se = s[i3],
+    q4          = b[i4], q4_se = s[i4],
+    q3_minus_q4 = diff34,
+    p_q3_q4     = 2 * pnorm(-abs(diff34 / se34))
+  )
+}
+
+base_breaks <- quantile(distinct(panel_base, COUNTY, win_rate)$win_rate,
+                        probs = seq(0, 1, 0.25), na.rm = TRUE)
+
+dose_robust <- bind_rows(
+  run_dose_bins(panel_base, "baseline (>= 20 petitions)"),
+  run_dose_bins(bp("baseline", min_petitions = 100),
+                "restrict to >= 100 petitions"),
+  run_dose_bins(bp("baseline", keep_counties = uncensored),
+                "drop censored win_rate = 1"),
+  run_dose_bins(bp("baseline", min_petitions = 100,
+                   keep_counties = uncensored),
+                "both restrictions"),
+  run_dose_bins(bp("baseline", min_petitions = 100),
+                ">= 100 petitions, fixed bin edges", breaks = base_breaks),
+  run_dose_bins(bp("baseline", keep_counties = uncensored),
+                "drop censored, fixed bin edges", breaks = base_breaks)
+)
+
+dose_robust
+```
+
+The two checks do not behave the same way. Dropping the censored counties leaves the
+step intact — the third-quartile coefficient is if anything slightly larger, and the
+Q3-versus-Q4 test is unchanged. Restricting to counties with at least 100 petitions
+removes it: the top-quartile coefficient moves toward zero and changes sign, and with
+the bin edges held fixed none of the quartile terms is distinguishable from zero. The
+non-linearity therefore tracks denominator size rather than dose.
+
+The composition table shows why the restriction bites so hard at the top.
+
+```{r}
+panel_base |>
+  distinct(COUNTY, win_rate, num_petitions) |>
+  mutate(dose_q = cut(win_rate, breaks = base_breaks,
+                      include.lowest = TRUE, labels = 1:4)) |>
+  group_by(dose_q) |>
+  summarise(counties         = n(),
+            median_petitions = median(num_petitions),
+            pct_under_100    = round(100 * mean(num_petitions < 100)),
+            surviving_at_100 = sum(num_petitions >= 100),
+            .groups = "drop")
+```
+
+Because the bins are not merely noisier at the top but *built* from small-denominator
+counties, the same restriction should be applied to the linear specification. It is the
+headline estimate, and it is subject to the identical problem.
+
+The floor is swept densely at the low end rather than pushed upward. Floors of 100 and
+200 do answer the measurement-error question, but they select so heavily on county size
+that any change is as easily read as urban heterogeneity. Floors between 1 and 40 move
+the sample much less, so they separate the two explanations more cleanly.
+
+A floor of 0 is not attainable and is not reported. 150 counties filed no petitions at
+all, so `win_rate = 0/0` is undefined; `num_petitions >= 0` would admit them and
+`pmin(Inf, 1)` would then score counties that filed nothing as *maximum* dose. The
+lowest meaningful floor is 1.
+
+```{r}
+petition_floors <- c(1, 10, 20, 30, 40, 50, 100, 200)
+
+# Built once and reused by the estimates, the composition table and the histograms,
+# so all three describe exactly the same samples.
+floor_panels <- setNames(
+  lapply(petition_floors, function(f) bp("baseline", min_petitions = f)),
+  petition_floors
+)
+
+# Two counties have a single reported NAICS industry, so shannon_index is exactly 0
+# and log_shannon is -Inf. Both have fewer than 20 petitions, so they appear only at
+# the new low floors and never touched the published sample. feols() drops them per
+# model, which is correct but silent -- counted here so the drop is on the record.
+sapply(floor_panels, function(d) sum(!is.finite(d$log_shannon)))
+
+lin_floor <- function(f, dv) {
+  d <- floor_panels[[as.character(f)]]
+  m <- feols(as.formula(paste(dv, "~ win_rate:Post | COUNTY + YEAR")),
+             data = d, cluster = ~COUNTY)
+  tt <- tidy(m) |> filter(term == "win_rate:Post")
+
+  tibble(outcome       = dv,
+         min_petitions = f,
+         counties      = n_distinct(d$COUNTY),
+         estimate      = tt$estimate,
+         std.error     = tt$std.error,
+         p.value       = tt$p.value)
+}
+
+threshold_table <- bind_rows(
+  lapply(petition_floors, lin_floor, dv = "log_hhi"),
+  lapply(petition_floors, lin_floor, dv = "log_shannon")
+)
+
+threshold_table
+```
+
+The estimate is not monotone in the floor. It peaks at 20 and decays in *both*
+directions: for `log_hhi` it runs +0.033 at a floor of 1, -0.051 at 10, -0.064 at 20,
+-0.058 at 30, -0.013 at 40 and -0.004 at 50, and `log_shannon` mirrors it with the
+opposite sign throughout. Neither candidate explanation predicts that shape on its own.
+Classical measurement error attenuates toward zero, so cleaning the dose by raising the
+floor should *strengthen* the estimate; instead it destroys it. Urban heterogeneity
+predicts a monotone drift as the sample shifts, not a peak.
+
+That the maximum sits exactly at the published floor of 20 deserves to be stated
+plainly. The threshold was chosen ex ante, for the stated reason that win rates built on
+few petitions are mechanically noisy, and not tuned against the result. But the estimate
+is clearly sensitive to it, and a reader is entitled to see the whole curve rather than
+one point on it.
+
+The sign flip at a floor of 1 is not a competing result. That sample is not "unselected",
+it is maximally noisy: median petitions of 6, a quarter of counties censored at
+`win_rate = 1`, and the dose for a county with one or two petitions is close to a coin
+flip. Both ends of the sweep are contaminated, in opposite ways.
+
+```{r}
+# ESTAB is total establishments in the county, so it stands in for county size and
+# shows directly how much of each floor's movement is compositional.
+floor_composition <- bind_rows(lapply(petition_floors, function(f) {
+  d   <- floor_panels[[as.character(f)]]
+  cty <- d |> distinct(COUNTY, win_rate, num_petitions)
+  est <- d |> filter(YEAR == 2016) |> distinct(COUNTY, ESTAB)
+
+  tibble(min_petitions = f,
+         counties      = nrow(cty),
+         med_petitions = median(cty$num_petitions),
+         med_estab     = median(est$ESTAB),
+         mean_win_rate = mean(cty$win_rate),
+         sd_win_rate   = sd(cty$win_rate),
+         pct_zero      = 100 * mean(cty$win_rate == 0),
+         pct_censored  = 100 * mean(cty$win_rate == 1))
+}))
+
+floor_composition
+```
+
+The composition table both confirms the concern about high floors and limits how much
+work it can do. Median establishments per county rise from about 2,000 at a floor of 1 to
+9,300 at 20 and 19,600 at 200, so floors of 100 and 200 are indeed heavily urban-selected.
+But the estimate has already collapsed by a floor of 40, where median establishments are
+12,600 — a 36% shift from the floor-of-20 sample, against the 4.7-fold shift between
+floors 1 and 20. The result therefore dies across a range where the sample composition
+barely moves, which is difficult to attribute to urban selection alone.
+
+The dose distribution deteriorates at the bottom rather than the top: the share of
+counties censored at `win_rate = 1` runs 27% at a floor of 1, 8% at 10, 4% at 20 and
+under 2% by 40, and counties at `win_rate = 0` disappear entirely by a floor of 30.
+
+```{r}
+# Distributions are county-level, not county-year. win_rate is time-invariant, so
+# histogramming the panel would weight each county by its number of years.
+dist_floors <- c(1, 10, 20, 30, 40)
+
+winrate_by_floor <- bind_rows(lapply(dist_floors, function(f) {
+  floor_panels[[as.character(f)]] |>
+    distinct(COUNTY, win_rate) |>
+    mutate(floor = factor(paste0(">= ", f, " petitions"),
+                          levels = paste0(">= ", dist_floors, " petitions")))
+}))
+
+winrate_floor_plot <- ggplot(winrate_by_floor, aes(x = win_rate)) +
+  geom_histogram(bins = 30, fill = "lightgreen", colour = "black") +
+  facet_wrap(~ floor, ncol = 3, scales = "free_y") +
+  labs(x = "Win Rate", y = "Count") +
+  theme_classic(base_size = 12)
+
+winrate_floor_plot
+
+ggsave("Figures/winrate_distribution_by_floor.pdf", winrate_floor_plot,
+       width = 9, height = 6)
+```
+
+The histograms show what the summary statistics compress. At a floor of 1 the
+distribution is barely a distribution: a spike at 0, a large spike at 1, and mass at the
+simple fractions a handful of petitions can produce. Raising the floor pulls it toward a
+single mode near 0.33 and strips the spikes at both ends. The dose only starts behaving
+like a continuous measure somewhere around a floor of 20 to 30 — which is also, awkwardly,
+where the estimated effect is disappearing.
+
+One caveat still governs the section. Restricting on `num_petitions` selects on county
+size, so measurement error and population composition can never be fully separated by
+cutting the sample, only bounded. The floor sweep narrows the gap considerably by showing
+the collapse happens where composition moves least, but settling it requires weighting by
+the denominator or an errors-in-variables correction that uses petition counts to model
+the noise directly.
+
+```{r}
+threshold_plot <- ggplot(threshold_table,
+                         aes(x = factor(min_petitions), y = estimate,
+                             colour = outcome, group = outcome)) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_errorbar(aes(ymin = estimate - 1.96 * std.error,
+                    ymax = estimate + 1.96 * std.error),
+                width = 0.08, position = position_dodge(width = 0.3)) +
+  geom_point(size = 2, position = position_dodge(width = 0.3)) +
+  labs(x = "Minimum petitions required for inclusion",
+       y = "Estimated win rate x Post coefficient",
+       colour = "Outcome") +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "bottom")
+
+threshold_plot
+
+ggsave("Figures/robustness_petition_threshold.pdf", threshold_plot,
+       width = 7, height = 5)
+```
+
 ## DiD Using Driscoll-Kray Standard Errors
 
 ### Original DiD using HHI
