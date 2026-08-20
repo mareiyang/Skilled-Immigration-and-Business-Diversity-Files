@@ -15,6 +15,10 @@ library(here)  # for reproducible paths
 # wrong directory makes here() point elsewhere, list.files() quietly returns
 # nothing, and the failure only surfaces later as a missing-column error.
 here::i_am("CBP_Data_Cleaning.Rmd")
+
+# Run log. Appends to logs/CBP_Data_Cleaning.log; see log_setup.R.
+source(here("log_setup.R"))
+log_init("CBP_Data_Cleaning")
 ```
 
 # Data Cleaning CBP Data
@@ -43,6 +47,9 @@ cbp_2014_2016_all <- cbp_2014_2016[
 head(cbp_2014_2016_all)
 unique(cbp_2014_2016_all$EMPSZES_LABEL)
 unique(cbp_2014_2016_all$LFO_LABEL)
+
+log_info(sprintf("read %d CBP files for 2014-2016", length(files_2014_2016)))
+log_dim("cbp_2014_2016_all", cbp_2014_2016_all)
 
 ```
 I uploaded the datasets from 2014-2016 and combined them while removing all the extra counts that are not the total counts of establishments.
@@ -75,6 +82,8 @@ cbp_2012_2013_all <- cbp_2012_2013[
 head(cbp_2012_2013_all)
 unique(cbp_2012_2013_all$EMPSZES_LABEL)
 unique(cbp_2012_2013_all$LFO_LABEL)
+
+log_dim("cbp_2012_2013_all", cbp_2012_2013_all)
 
 cbp_2012_2013_cleaned <- cbp_2012_2013_all %>% select(GEO_ID, NAME, NAICS2012, NAICS2012_LABEL, LFO, EMPSZES, YEAR, ESTAB)
 ```
@@ -113,6 +122,8 @@ cbp_2017_2022_all <- cbp_2017_2022[
 head(cbp_2017_2022_all)
 unique(cbp_2017_2022_all$EMPSZES_LABEL)
 unique(cbp_2017_2022_all$LFO_LABEL)
+
+log_dim("cbp_2017_2022_all", cbp_2017_2022_all)
 
 cbp_2017_2022_cleaned <- cbp_2017_2022_all %>% select(GEO_ID, NAME, NAICS2017, NAICS2017_LABEL, LFO, EMPSZES, YEAR, ESTAB)
 
@@ -179,12 +190,19 @@ cbp_2012_2022 <- cbp_2012_2022_unsorted %>%
 cbp_2012_2022 <- cbp_2012_2022 %>% select(GEO_ID, NAME, YEAR, ESTAB, NAICS)
 
 head(cbp_2012_2022)
+
+log_dim("cbp_2012_2022", cbp_2012_2022)
+log_info(sprintf("counties: %d, years: %s",
+                 length(unique(cbp_2012_2022$GEO_ID)),
+                 paste(range(cbp_2012_2022$YEAR), collapse = "-")))
 ```
 
 ## Exporting Dependent Variable Dataset
 
 ```{r}
 write.csv(cbp_2012_2022, "cbp_2012_2022.csv", row.names = FALSE)
+log_write("cbp_2012_2022.csv")
+log_done()
 ```
 
 # Dataviz

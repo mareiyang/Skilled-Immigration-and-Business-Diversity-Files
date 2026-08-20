@@ -9,8 +9,16 @@ editor: visual
 ```{r}
 library(data.table)
 
+# Run log. Appends to logs/H-1B_Data.log; see log_setup.R. Paths in this file
+# are relative to the project root, so this one is too.
+source("log_setup.R")
+log_init("H-1B_Data")
+
 CBP_data <- as.data.table(read.csv(("cbp_2012_2022.csv")))
 H1b_2016 <- as.data.table(read.csv("Lottery_Applications_vs_Approvals.csv"))
+log_dim("CBP_data", CBP_data)
+log_dim("H1b_2016 (county dose)", H1b_2016)
+
 ```
 
 ### Cleaning
@@ -32,10 +40,19 @@ ProsemData_Raw <- CBP_data |>
   left_join(H1b_2016, by = "COUNTY") |>
   mutate(h1b_activity = ifelse(is.na(win_rate), 0, 1))
 
+# The 20-petition floor is where almost every county is dropped, and because
+# `NA >= 20` is NA it also silently removes counties with no H-1B activity.
+# Both counts go on the record.
+log_info(sprintf("counties before 20-petition floor: %d (%d with H-1B activity)",
+                 length(unique(ProsemData_Raw$COUNTY)),
+                 length(unique(ProsemData_Raw$COUNTY[ProsemData_Raw$h1b_activity == 1]))))
+
 ProsemData_Raw <- ProsemData_Raw[ProsemData_Raw$num_petitions >= 20]
 
 ProsemData_Raw <- ProsemData_Raw |>
   distinct()
+log_info(sprintf("counties after 20-petition floor: %d",
+                 length(unique(ProsemData_Raw$COUNTY))))
 ```
 
 ## Fixing Duplicates in County Business Patterns
@@ -121,6 +138,12 @@ H1bdf <- H1bdf %>%
   left_join(state_fips_lookup, by = "state_fips") %>%
   rename(STATE = state_abbr) %>%
   select(-state_fips)
+
+log_dim("H1bdf (analysis panel)", H1bdf)
+log_info(sprintf("counties: %d, years: %s, missing win_rate: %d",
+                 length(unique(H1bdf$COUNTY)),
+                 paste(range(H1bdf$YEAR), collapse = "-"),
+                 sum(is.na(H1bdf$win_rate))))
 
 library(haven)
 #write.csv(H1bdf, "h1bdf.csv", row.names = FALSE)
@@ -1098,10 +1121,10 @@ Because the bins are not merely noisier at the top but *built* from small-denomi
 counties, the same restriction should be applied to the linear specification. It is the
 headline estimate, and it is subject to the identical problem.
 
-The floor is swept densely at the low end rather than pushed upward. Floors of 100 and
-200 do answer the measurement-error question, but they select so heavily on county size
-that any change is as easily read as urban heterogeneity. Floors between 1 and 40 move
-the sample much less, so they separate the two explanations more cleanly.
+The floor is swept densely at the low end and stops at 50. Floors of 100 and 200 would
+answer the measurement-error question, but they select so heavily on county size that any
+change is as easily read as urban heterogeneity, so they are not reported. Floors between
+1 and 50 move the sample much less, so they separate the two explanations more cleanly.
 
 A floor of 0 is not attainable and is not reported. 150 counties filed no petitions at
 all, so `win_rate = 0/0` is undefined; `num_petitions >= 0` would admit them and
@@ -1109,12 +1132,18 @@ all, so `win_rate = 0/0` is undefined; `num_petitions >= 0` would admit them and
 lowest meaningful floor is 1.
 
 ```{r}
-petition_floors <- c(1, 10, 20, 30, 40, 50, 100, 200)
+petition_floors <- c(1, 10, 20, 30, 40, 50)
 
 # Built once and reused by the estimates, the composition table and the histograms,
 # so all three describe exactly the same samples.
 floor_panels <- setNames(
-  lapply(petition_floors, function(f) bp("baseline", min_petitions = f)),
+  # Randall County TX (48381) has 25 petitions and 0 baseline approvals, so the
+  # rebuild scores it win_rate = 0 while H1bdf carries it as NA. Left in, the
+  # floor-20 row reports 349 counties / 3,834 obs against the published 348 /
+  # 3,823. Excluded so every floor-20 number in the paper is the same sample.
+  lapply(petition_floors, function(f) {
+    bp("baseline", min_petitions = f) |> filter(COUNTY != "48381")
+  }),
   petition_floors
 )
 
@@ -1147,7 +1176,7 @@ threshold_table
 ```
 
 The estimate is not monotone in the floor. It peaks at 20 and decays in *both*
-directions: for `log_hhi` it runs +0.033 at a floor of 1, -0.051 at 10, -0.064 at 20,
+directions: for `log_hhi` it runs +0.032 at a floor of 1, -0.052 at 10, -0.064 at 20,
 -0.058 at 30, -0.013 at 40 and -0.004 at 50, and `log_shannon` mirrors it with the
 opposite sign throughout. Neither candidate explanation predicts that shape on its own.
 Classical measurement error attenuates toward zero, so cleaning the dose by raising the
@@ -1186,22 +1215,22 @@ floor_composition <- bind_rows(lapply(petition_floors, function(f) {
 floor_composition
 ```
 
-The composition table both confirms the concern about high floors and limits how much
-work it can do. Median establishments per county rise from about 2,000 at a floor of 1 to
-9,300 at 20 and 19,600 at 200, so floors of 100 and 200 are indeed heavily urban-selected.
-But the estimate has already collapsed by a floor of 40, where median establishments are
-12,600 — a 36% shift from the floor-of-20 sample, against the 4.7-fold shift between
-floors 1 and 20. The result therefore dies across a range where the sample composition
-barely moves, which is difficult to attribute to urban selection alone.
+The composition table limits how much work urban selection can do. Median establishments
+per county rise from about 2,000 at a floor of 1 to 9,300 at 20, so the low end of the
+sweep does shift the sample substantially. But the estimate has already collapsed by a
+floor of 40, where median establishments are 12,600 -- a 36% shift from the floor-of-20
+sample, against the 4.7-fold shift between floors 1 and 20. By 50 the median is 12,900,
+another 2%. The result therefore dies across a range where the sample composition barely
+moves, which is difficult to attribute to urban selection alone.
 
 The dose distribution deteriorates at the bottom rather than the top: the share of
 counties censored at `win_rate = 1` runs 27% at a floor of 1, 8% at 10, 4% at 20 and
-under 2% by 40, and counties at `win_rate = 0` disappear entirely by a floor of 30.
+under 2% by 40, and counties at `win_rate = 0` disappear entirely by a floor of 20.
 
 ```{r}
 # Distributions are county-level, not county-year. win_rate is time-invariant, so
 # histogramming the panel would weight each county by its number of years.
-dist_floors <- c(1, 10, 20, 30, 40)
+dist_floors <- c(1, 10, 20, 30, 40, 50)
 
 winrate_by_floor <- bind_rows(lapply(dist_floors, function(f) {
   floor_panels[[as.character(f)]] |>

@@ -15,6 +15,10 @@ library(here)
 # from the session's working directory. Every Excel path below, and the Figures
 # export, depend on this resolving correctly.
 here::i_am("H-1B_Data_Cleaning.Rmd")
+
+# Run log. Appends to logs/H-1B_Data_Cleaning.log; see log_setup.R.
+source(here("log_setup.R"))
+log_init("H-1B_Data_Cleaning")
 ```
 
 # Data Cleaning H-1B Data
@@ -30,12 +34,14 @@ file_path <- here("Datasets", "H-1B Data",  "H-1B_Disclosure_Data_FY16.xlsx")
 
 # Read the sheet into a data.table
 H1B2016_Disclosure_Data <- as.data.table(read_excel(file_path, sheet = 1))
+log_dim("LCA disclosure FY16", H1B2016_Disclosure_Data)
 ```
 
 ```{r}
 H1BFY2017_employer_data_hub <- as.data.table(
   read_excel(here("Datasets", "H-1B Data", "H-1B Employer Data Hub (2017).xlsx"), sheet = 1)
 )
+log_dim("USCIS Data Hub FY17", H1BFY2017_employer_data_hub)
 ```
 
 ## Visualization of the 2016 H-1B Disclosure Data
@@ -500,4 +506,7 @@ Lottery_Final <- Lottery_Final |>
   )
 
 write.csv(Lottery_Final, "Lottery_Applications_vs_Approvals.csv", row.names = FALSE)
+log_dim("Lottery_Final", Lottery_Final)
+log_write("Lottery_Applications_vs_Approvals.csv")
+log_done()
 ```
